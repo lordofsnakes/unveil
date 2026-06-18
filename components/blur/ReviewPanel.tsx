@@ -7,6 +7,7 @@ const PROCESSING = ["uploaded", "detecting", "tracking", "compositing"];
 import { ShieldCheck, RotateCcw, UserCog, CircleCheck, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { RegionOverlay } from "./RegionOverlay";
+import { BlurProgress } from "./BlurProgress";
 import type { DetectedRegion } from "@/lib/db/schema";
 
 type Action = "approve" | "adjust" | "manual";
@@ -113,6 +114,8 @@ export function ReviewPanel({
           ) : (
             <RegionOverlay src={previewUrl} regions={regions} alt="Blurred preview" />
           )
+        ) : PROCESSING.includes(state) ? (
+          <BlurProgress status={state} mediaType={mediaType} />
         ) : (
           <div className="text-faint flex aspect-[4/5] items-center justify-center text-[13px]">
             No preview yet
@@ -204,12 +207,9 @@ function ResultBanner({ state }: { state: string }) {
       </p>
     );
   }
-  if (state === "detecting" || state === "tracking" || state === "compositing") {
-    return (
-      <p className="text-muted flex items-center gap-2 text-[14px]">
-        <RotateCcw size={16} /> Re-processing ({state})… refresh to see the new result.
-      </p>
-    );
+  if (PROCESSING.includes(state)) {
+    // The BlurProgress stepper in the preview area already shows live progress.
+    return null;
   }
   if (state === "manual_review") {
     return (

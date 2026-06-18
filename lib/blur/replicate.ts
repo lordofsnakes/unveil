@@ -44,6 +44,27 @@ export const MODELS = {
   },
 } as const;
 
+// Replicate throttles prediction creation hard under low credit (6/min, burst
+// of 1 while < $5). The video path fires two creates back-to-back (detect →
+// track), so the second can 429. Retry on 429, waiting out the short window.
+type CreateArgs = Parameters<Replicate["predictions"]["create"]>[0];
+
+export async function createPredictionWithRetry(input: CreateArgs, attempts = 4) {
+  const replicate = getReplicate();
+  for (let i = 0; ; i++) {
+    try {
+      return await replicate.predictions.create(input);
+    } catch (err) {
+      const status =
+        (err as { response?: { status?: number } })?.response?.status ??
+        (err as { status?: number })?.status;
+      const is429 = status === 429 || /\b429\b/.test(String((err as Error)?.message));
+      if (!is429 || i >= attempts - 1) throw err;
+      await new Promise((r) => setTimeout(r, 12_000)); // 6/min window
+    }
+  }
+}
+
 // Region prompt taxonomy — TUNE empirically (PRD open question #1).
 // Comma-joined for grounded_sam's `mask_prompt` and grounding-dino's `query`.
 export const DESIRED_REGIONS = ["breast", "genitalia", "buttocks", "nipple"];

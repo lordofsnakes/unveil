@@ -1,7 +1,7 @@
 import { put } from "@vercel/blob";
 import { presignPrivateGet } from "@/lib/blob";
 import {
-  getReplicate,
+  createPredictionWithRetry,
   DESIRED_REGIONS,
   NEGATIVE_REGIONS,
   GROUNDED_SAM_OUTPUT,
@@ -40,8 +40,7 @@ export async function startPipeline(
 
 // P5 — one prediction does detect+track+composite on the GPU box.
 async function cogStage(jobId: string, rawUrl: string, mediaType: "image" | "video") {
-  const replicate = getReplicate();
-  const pred = await replicate.predictions.create({
+  const pred = await createPredictionWithRetry({
     version: process.env.REPLICATE_VEIL_AUTOBLUR_VERSION!,
     input: {
       media: rawUrl,
@@ -71,11 +70,10 @@ export async function detectStage(
   mediaType: "image" | "video",
   opts: DetectOpts = {},
 ) {
-  const replicate = getReplicate();
 
   if (mediaType === "image") {
     // grounded_sam does detect + mask in one call.
-    const pred = await replicate.predictions.create({
+    const pred = await createPredictionWithRetry({
       version: process.env.REPLICATE_GROUNDED_SAM_VERSION!,
       input: {
         image: rawUrl,
@@ -93,7 +91,7 @@ export async function detectStage(
 
   // video: detect boxes on the first frame (seed @ frame 0).
   const { keyframeUrl, fps } = await extractFirstFrame(jobId, rawUrl);
-  const pred = await replicate.predictions.create({
+  const pred = await createPredictionWithRetry({
     version: process.env.REPLICATE_GROUNDING_DINO_VERSION!,
     input: {
       image: keyframeUrl,
@@ -206,9 +204,8 @@ async function onDetectComplete(job: BlurJob, output: unknown) {
 
 // ── Stage 2 — TRACK (video only) ────────────────────────────────────────────
 async function trackStage(job: BlurJob, regions: DetectedRegion[]) {
-  const replicate = getReplicate();
   const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
-  const pred = await replicate.predictions.create({
+  const pred = await createPredictionWithRetry({
     version: process.env.REPLICATE_SAM2_VIDEO_VERSION!,
     input: {
       input_video: rawUrl,
