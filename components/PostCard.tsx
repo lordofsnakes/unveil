@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useAccount } from "wagmi";
 import { motion } from "framer-motion";
 import {
   Heart,
@@ -21,7 +23,7 @@ export type FeedPost = {
   blurredPreviewUrl: string;
   unlockPrice: string;
   mediaType: "image" | "video";
-  creator: { username: string | null; avatar: string | null };
+  creator: { username: string | null; avatar: string | null; wallet: string | null };
 };
 
 export function PostCard({
@@ -33,16 +35,40 @@ export function PostCard({
   isUnlocked?: boolean;
   priority?: boolean;
 }) {
+  const account = useAccount();
+  const router = useRouter();
   const free = Number(post.unlockPrice) === 0;
   const [unlocked, setUnlocked] = useState(initialUnlocked ?? false);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [proof, setProof] = useState<{ settlementMs: number } | null>(null);
+  const [messaging, setMessaging] = useState(false);
 
   const handleUnlock = useCallback((url: string, settlementMs: number) => {
     setSignedUrl(url);
     setUnlocked(true);
     setProof({ settlementMs });
   }, []);
+
+  const messageCreator = useCallback(async () => {
+    if (!account.address || !post.creator.wallet || messaging) return;
+    setMessaging(true);
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet: account.address,
+          creatorWallet: post.creator.wallet,
+        }),
+      });
+      if (res.ok) {
+        const { threadId } = (await res.json()) as { threadId: string };
+        router.push(`/messages/${threadId}`);
+      }
+    } finally {
+      setMessaging(false);
+    }
+  }, [account.address, post.creator.wallet, messaging, router]);
 
   const username = post.creator.username ?? "creator";
   const revealed = unlocked || free;
@@ -118,7 +144,12 @@ export function PostCard({
           <button className="flex items-center gap-1.5 text-[13.5px]" aria-label="Like">
             <Heart size={22} strokeWidth={1.9} />
           </button>
-          <button aria-label="Comment">
+          <button
+            onClick={messageCreator}
+            disabled={messaging || !account.address || !post.creator.wallet}
+            aria-label="Message creator"
+            className="disabled:opacity-50"
+          >
             <MessageCircle size={22} strokeWidth={1.9} />
           </button>
           <button

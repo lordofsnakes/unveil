@@ -1,10 +1,41 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { put } from "@vercel/blob";
-import { upsertCreator } from "@/lib/db/queries";
+import {
+  upsertCreator,
+  getUserByWallet,
+  getPostsByCreator,
+} from "@/lib/db/queries";
+import { presignPrivateGet } from "@/lib/blob";
+import { formatUsd } from "@/lib/constants";
 import { createJob, updateJob } from "@/lib/blur/jobs";
 
 export const runtime = "nodejs";
+
+/**
+ * GET /api/posts?wallet=0x… — a creator's own posts. Powers the "attach locked
+ * content" picker in DMs (creator-only PPV). Previews are presigned for display.
+ */
+export async function GET(req: NextRequest) {
+  const wallet = req.nextUrl.searchParams.get("wallet");
+  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
+
+  const user = await getUserByWallet(wallet);
+  if (!user) return Response.json({ posts: [] });
+
+  const rows = await getPostsByCreator(user.id);
+  const posts = await Promise.all(
+    rows.map(async (p) => ({
+      id: p.id,
+      title: p.title,
+      unlockPrice: p.unlockPrice,
+      priceLabel: `$${formatUsd(p.unlockPrice)}`,
+      mediaType: p.mediaType,
+      previewUrl: await presignPrivateGet(p.blurredPreviewUrl, 3600),
+    })),
+  );
+  return Response.json({ posts });
+}
 
 // Soft cap to stay well under serverless request-body limits. Large videos
 // should use Vercel Blob client upload (auto-blur PRD §10) — a follow-up.

@@ -1,16 +1,42 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAccount } from "wagmi";
+import { Bell } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomNav } from "@/components/BottomNav";
+import { ConnectButton } from "@/components/ConnectButton";
+import { EmptyState } from "@/components/EmptyState";
+import { timeAgo } from "@/lib/time";
 
-const TABS = ["All", "Unveils", "Tips", "Mentions"];
-
-const NOTIFS = [
-  { who: "Velour", what: "unveiled your reply", time: "3m ago", amt: "+$0.02", credit: true },
-  { who: "Maison Rouge", what: "tipped you", time: "1h ago", amt: "+$0.50", credit: true },
-  { who: "Noir Studio", what: "mentioned you in a post", time: "4h ago", amt: "" },
-  { who: "Velour", what: "subscribed to you", time: "Yesterday", amt: "" },
-];
+type Notif = {
+  id: string;
+  actor: string;
+  avatar: string | null;
+  action: string;
+  postTitle: string;
+  amount: string;
+  at: string;
+};
 
 export default function NotificationsPage() {
+  const account = useAccount();
+  const connected = account.status === "connected" && account.address;
+  const [items, setItems] = useState<Notif[] | null>(null);
+
+  useEffect(() => {
+    if (!account.address) return;
+    let live = true;
+    setItems(null);
+    fetch(`/api/notifications?wallet=${account.address}`)
+      .then((r) => r.json())
+      .then((d) => live && setItems(d.items ?? []))
+      .catch(() => live && setItems([]));
+    return () => {
+      live = false;
+    };
+  }, [account.address]);
+
   return (
     <main className="flex min-h-screen flex-1 flex-col">
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
@@ -20,51 +46,53 @@ export default function NotificationsPage() {
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 pb-28">
-        <div className="border-hairline flex gap-2 overflow-x-auto border-b px-[18px] py-3.5">
-          {TABS.map((t, i) => (
-            <span
-              key={t}
-              className="rounded-pill px-4 py-2 text-[13.5px] font-semibold whitespace-nowrap"
-              style={
-                i === 0
-                  ? {
-                      background: "var(--primary-tint)",
-                      border: "1px solid rgba(194,20,59,.35)",
-                      color: "var(--text)",
-                    }
-                  : { background: "var(--surface-2)", color: "var(--text-muted)" }
-              }
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-
-        <ul className="px-[18px]">
-          {NOTIFS.map((n, i) => (
-            <li
-              key={i}
-              className="border-hairline flex items-center gap-3.5 border-b py-3.5"
-            >
-              <Avatar name={n.who} size="lg" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[14.5px] leading-snug">
-                  <span className="font-semibold">{n.who}</span>{" "}
-                  <span className="text-muted">{n.what}</span>
-                </p>
-                <p className="text-faint mt-0.5 text-[12px]">{n.time}</p>
-              </div>
-              {n.amt && (
+        {!connected ? (
+          <div className="mt-24 flex flex-col items-center gap-5 px-8 text-center">
+            <Avatar name="you" size="xl" />
+            <div>
+              <p className="text-text font-semibold">Sign in to see activity</p>
+              <p className="text-faint mt-1 text-sm">
+                Unlocks and earnings on your posts show up here.
+              </p>
+            </div>
+            <ConnectButton />
+          </div>
+        ) : items === null ? (
+          <p className="text-faint mt-16 text-center text-sm">Loading…</p>
+        ) : items.length === 0 ? (
+          <div className="mt-10">
+            <EmptyState
+              icon={Bell}
+              title="Nothing yet"
+              body="When someone unveils one of your posts, you'll see it here."
+            />
+          </div>
+        ) : (
+          <ul className="px-[18px]">
+            {items.map((n) => (
+              <li
+                key={n.id}
+                className="border-hairline flex items-center gap-3.5 border-b py-3.5"
+              >
+                <Avatar name={n.actor} src={n.avatar} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14.5px] leading-snug">
+                    <span className="font-semibold">{n.actor}</span>{" "}
+                    <span className="text-muted">{n.action} </span>
+                    <span className="text-text">“{n.postTitle}”</span>
+                  </p>
+                  <p className="text-faint mt-0.5 text-[12px]">{timeAgo(n.at)}</p>
+                </div>
                 <span
                   className="tabular text-[12.5px]"
-                  style={{ color: n.credit ? "var(--success)" : "var(--text-faint)" }}
+                  style={{ color: "var(--success)" }}
                 >
-                  {n.amt}
+                  {n.amount}
                 </span>
-              )}
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <BottomNav />

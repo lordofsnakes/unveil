@@ -23,6 +23,10 @@ export const loyaltyEventTypeEnum = pgEnum("loyalty_event_type", [
   "streak_bonus",
 ]);
 
+// A DM is either plain text or a pay-per-view card that points at a post. PPV
+// messages reuse the existing posts/unlocks/Tempo path — see lib/db/messages.ts.
+export const messageKindEnum = pgEnum("message_kind", ["text", "ppv"]);
+
 // ── users ────────────────────────────────────────────────────────────────────
 export const users = pgTable(
   "users",
@@ -113,6 +117,59 @@ export const loyaltyLedger = pgTable(
       .notNull(),
   },
   (t) => [index("loyalty_user_idx").on(t.userId)],
+);
+
+// ── threads (DM conversations) ────────────────────────────────────────────────
+// A conversation is always fan ↔ creator. One row per pair; `lastMessageAt`
+// drives the inbox ordering. See lib/db/messages.ts.
+export const threads = pgTable(
+  "threads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    creatorId: uuid("creator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fanId: uuid("fan_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    // one conversation per (creator, fan) pair
+    uniqueIndex("threads_pair_uniq").on(t.creatorId, t.fanId),
+    index("threads_creator_idx").on(t.creatorId),
+    index("threads_fan_idx").on(t.fanId),
+  ],
+);
+
+// ── messages ──────────────────────────────────────────────────────────────────
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    senderId: uuid("sender_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: messageKindEnum("kind").notNull().default("text"),
+    // Text body, or the caption shown above a PPV card.
+    body: text("body"),
+    // PPV only — the locked post the recipient unlocks via the normal flow.
+    postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+    // Set when the *recipient* has read it (sender's own message is never unread).
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("messages_thread_idx").on(t.threadId, t.createdAt)],
 );
 
 // ── blur_jobs (auto-blur pipeline) ────────────────────────────────────────────
@@ -215,12 +272,25 @@ export const usersRelations = relations(users, ({ many }) => ({
   unlocks: many(unlocks),
   loyaltyEntries: many(loyaltyLedger),
   blurJobs: many(blurJobs),
+  sentMessages: many(messages),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
   creator: one(users, { fields: [posts.creatorId], references: [users.id] }),
   unlocks: many(unlocks),
   blurJobs: many(blurJobs),
+}));
+
+export const threadsRelations = relations(threads, ({ one, many }) => ({
+  creator: one(users, { fields: [threads.creatorId], references: [users.id] }),
+  fan: one(users, { fields: [threads.fanId], references: [users.id] }),
+  messages: many(messages),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  thread: one(threads, { fields: [messages.threadId], references: [threads.id] }),
+  sender: one(users, { fields: [messages.senderId], references: [users.id] }),
+  post: one(posts, { fields: [messages.postId], references: [posts.id] }),
 }));
 
 export const blurJobsRelations = relations(blurJobs, ({ one }) => ({

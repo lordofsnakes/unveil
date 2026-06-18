@@ -25,6 +25,7 @@ async function loadFeed(): Promise<FeedPost[] | null> {
         creator: {
           username: p.creator?.username ?? null,
           avatar: p.creator?.avatar ?? null,
+          wallet: p.creator?.walletAddress ?? null,
         },
       })),
     );

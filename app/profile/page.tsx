@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { Menu, Zap } from "lucide-react";
+import { Menu, Zap, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { FlexCard } from "@/components/FlexCard";
@@ -15,38 +15,56 @@ type Loyalty = {
   stats: { unlockCount: number; totalPaid: string; avgSettleMs: number };
   onchain: boolean;
 };
-
-const GALLERY = [
-  "radial-gradient(120% 120% at 30% 12%,#5a2738,#1f131a)",
-  "linear-gradient(150deg,#2c2832,#12101a)",
-  "radial-gradient(120% 120% at 72% 22%,#6a2031,#241420)",
-  "conic-gradient(from 200deg,#4a2030,#1c1117,#4a2030)",
-  "radial-gradient(120% 120% at 40% 80%,#3a2230,#140e12)",
-  "linear-gradient(135deg,#3a1622,#160d12)",
-];
+type Profile = { username: string | null; avatar: string | null };
+type CollectionItem = {
+  postId: string;
+  title: string;
+  url: string;
+  mediaType: "image" | "video";
+};
 
 export default function ProfilePage() {
   const account = useAccount();
   const [drawer, setDrawer] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [loyalty, setLoyalty] = useState<Loyalty | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [collection, setCollection] = useState<CollectionItem[] | null>(null);
 
   useEffect(() => {
     if (!account.address) return;
+    const wallet = account.address;
     let live = true;
-    fetch(`/api/loyalty?wallet=${account.address}`)
+    fetch(`/api/loyalty?wallet=${wallet}`)
       .then((r) => r.json())
       .then((d) => live && setLoyalty(d))
       .catch(() => {});
+    fetch(`/api/user?wallet=${wallet}`)
+      .then((r) => r.json())
+      .then((d) => live && setProfile(d.user))
+      .catch(() => {});
+    fetch(`/api/collection?wallet=${wallet}`)
+      .then((r) => r.json())
+      .then((d) => live && setCollection(d.items ?? []))
+      .catch(() => live && setCollection([]));
     return () => {
       live = false;
     };
   }, [account.address]);
 
   const connected = account.status === "connected" && account.address;
-  const handle = account.address
+  const fallbackHandle = account.address
     ? `@${account.address.slice(2, 8).toLowerCase()}`
     : "@you";
+  const handle = profile?.username ? `@${profile.username}` : fallbackHandle;
+  const displayName = profile?.username ?? "You";
   const stats = loyalty?.stats;
+
+  function share() {
+    if (account.address) {
+      window.open(`/api/og/flex-card?wallet=${account.address}`, "_blank");
+    }
+  }
 
   return (
     <main className="flex min-h-screen flex-1 flex-col">
@@ -80,20 +98,28 @@ export default function ProfilePage() {
           <>
             {/* Identity */}
             <div className="flex items-end gap-4">
-              <Avatar name={handle} size="xl" verified />
+              <Avatar name={handle} src={profile?.avatar} size="xl" verified />
               <div className="flex-1 pb-1">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xl font-bold">You</span>
+                  <span className="text-xl font-bold">{displayName}</span>
                 </div>
                 <div className="text-faint tabular mt-0.5 text-[13.5px]">{handle}</div>
               </div>
             </div>
 
             <div className="mt-4 flex gap-2">
-              <Button variant="secondary" className="h-[46px] flex-1 text-sm">
+              <Button
+                variant="secondary"
+                className="h-[46px] flex-1 text-sm"
+                onClick={() => setEditOpen(true)}
+              >
                 Edit profile
               </Button>
-              <Button variant="secondary" className="h-[46px] flex-1 text-sm">
+              <Button
+                variant="secondary"
+                className="h-[46px] flex-1 text-sm"
+                onClick={share}
+              >
                 Share
               </Button>
             </div>
@@ -114,12 +140,7 @@ export default function ProfilePage() {
               <FlexCard
                 handle={handle}
                 balance={fmtPoints(loyalty?.points ?? "0")}
-                onShare={() =>
-                  window.open(
-                    `/api/og/flex-card?wallet=${account.address}`,
-                    "_blank",
-                  )
-                }
+                onShare={share}
               />
               {loyalty?.onchain && (
                 <div className="text-faint mt-2 flex items-center justify-center gap-1.5 text-[12px]">
@@ -129,26 +150,137 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* Collection */}
+            {/* Collection — real unlocked posts */}
             <h2 className="text-text mt-7 mb-3 text-[15px] font-semibold">
               Your collection
             </h2>
-            <div className="grid grid-cols-3 gap-2">
-              {GALLERY.map((g, i) => (
-                <div
-                  key={i}
-                  className="rounded-md"
-                  style={{ aspectRatio: "1", background: g }}
-                />
-              ))}
-            </div>
+            {collection === null ? (
+              <p className="text-faint py-6 text-center text-sm">Loading…</p>
+            ) : collection.length === 0 ? (
+              <p className="text-faint py-6 text-center text-[13.5px]">
+                Unlock a post to start your collection.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {collection.map((c) =>
+                  c.mediaType === "video" ? (
+                    <video
+                      key={c.postId}
+                      src={c.url}
+                      className="rounded-md object-cover"
+                      style={{ aspectRatio: "1" }}
+                      muted
+                      playsInline
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={c.postId}
+                      src={c.url}
+                      alt={c.title}
+                      className="rounded-md object-cover"
+                      style={{ aspectRatio: "1" }}
+                    />
+                  ),
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
 
       <BottomNav />
       <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
+      {editOpen && account.address && (
+        <EditProfileSheet
+          wallet={account.address}
+          current={profile?.username ?? ""}
+          onClose={() => setEditOpen(false)}
+          onSaved={(p) => {
+            setProfile(p);
+            setEditOpen(false);
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+function EditProfileSheet({
+  wallet,
+  current,
+  onClose,
+  onSaved,
+}: {
+  wallet: string;
+  current: string;
+  onClose: () => void;
+  onSaved: (p: Profile) => void;
+}) {
+  const [name, setName] = useState(current);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet, username: name }),
+      });
+      const d = (await res.json().catch(() => ({}))) as {
+        user?: Profile;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(d.error ?? "Could not save");
+      onSaved(d.user!);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border-hairline w-full max-w-md rounded-t-card border-t p-5"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 22px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-[16px] font-semibold">Edit profile</span>
+          <button onClick={onClose} aria-label="Close" className="text-muted">
+            <X size={20} />
+          </button>
+        </div>
+        <label className="text-faint text-[12.5px]">Username</label>
+        <div className="bg-surface-2 border-hairline mt-1.5 flex items-center rounded-md border px-3">
+          <span className="text-faint">@</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="yourname"
+            autoFocus
+            className="text-text placeholder:text-faint h-[46px] flex-1 bg-transparent px-1 outline-none"
+          />
+        </div>
+        <p className="text-faint mt-2 text-[12px]">3–20 chars: a–z, 0–9, underscore.</p>
+        {error && <p className="text-danger mt-2 text-[13px]">{error}</p>}
+        <Button
+          className="mt-4 h-[48px] w-full"
+          onClick={save}
+          disabled={saving || !name.trim()}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

@@ -1,17 +1,51 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAccount } from "wagmi";
 import { Home, Bell, Plus, MessageCircle } from "lucide-react";
-
-const TABS = [
-  { href: "/", label: "Feed", icon: Home },
-  { href: "/notifications", label: "Notifications", icon: Bell, badge: "12" },
-  { href: "/messages", label: "Messages", icon: MessageCircle, badge: "3" },
-] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
+  const account = useAccount();
+  const [unread, setUnread] = useState(0);
+
+  // Real unread-message badge. Refetched on navigation (cheap) so opening a
+  // thread — which marks it read — clears the badge when you come back.
+  useEffect(() => {
+    if (!account.address) {
+      setUnread(0);
+      return;
+    }
+    let live = true;
+    fetch(`/api/messages?wallet=${account.address}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!live) return;
+        const total = (d.threads ?? []).reduce(
+          (n: number, t: { unread: number }) => n + (t.unread ?? 0),
+          0,
+        );
+        setUnread(total);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [account.address, pathname]);
+
+  const TABS = [
+    { href: "/", label: "Feed", icon: Home },
+    { href: "/notifications", label: "Notifications", icon: Bell },
+    {
+      href: "/messages",
+      label: "Messages",
+      icon: MessageCircle,
+      badge: unread > 0 ? String(unread) : undefined,
+    },
+  ] as const;
+
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 

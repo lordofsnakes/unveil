@@ -50,6 +50,16 @@ export async function getPost(postId: string) {
   });
 }
 
+/** A creator's own posts, newest first — used to attach a PPV card in a DM. */
+export async function getPostsByCreator(creatorId: string, limit = 30) {
+  const db = getDb();
+  return db.query.posts.findMany({
+    where: eq(posts.creatorId, creatorId),
+    orderBy: [desc(posts.createdAt)],
+    limit,
+  });
+}
+
 export async function getUserByWallet(walletAddress: string) {
   const db = getDb();
   return db.query.users.findFirst({
@@ -126,4 +136,79 @@ export async function getLoyaltyBalance(userId: string): Promise<string> {
     .from(loyaltyLedger)
     .where(eq(loyaltyLedger.userId, userId));
   return r?.bal ?? "0";
+}
+
+/**
+ * Persist editable profile fields. Only keys present in `patch` are written, so
+ * a username-only edit never clobbers the avatar. `username` is uniquely
+ * indexed — a collision surfaces as a Postgres unique-violation for the caller
+ * to translate into a 409.
+ */
+export async function updateUserProfile(
+  walletAddress: string,
+  patch: { username?: string | null; avatar?: string | null },
+) {
+  const db = getDb();
+  const set: Partial<typeof users.$inferInsert> = {};
+  if (patch.username !== undefined) set.username = patch.username;
+  if (patch.avatar !== undefined) set.avatar = patch.avatar;
+  const [user] = await db
+    .update(users)
+    .set(set)
+    .where(eq(users.walletAddress, walletAddress.toLowerCase()))
+    .returning();
+  return user;
+}
+
+/**
+ * The fan's collection — every post they've unlocked, newest first. Returns the
+ * private media key so the caller can presign the real (unblurred) media: this
+ * is the reward for having paid.
+ */
+export async function getUnlockedPosts(fanId: string, limit = 24) {
+  const db = getDb();
+  return db
+    .select({
+      postId: posts.id,
+      title: posts.title,
+      privateMediaKey: posts.privateMediaKey,
+      blurredPreviewUrl: posts.blurredPreviewUrl,
+      mediaType: posts.mediaType,
+      unlockPrice: posts.unlockPrice,
+      unlockedAt: unlocks.unlockedAt,
+      creatorUsername: users.username,
+    })
+    .from(unlocks)
+    .innerJoin(posts, eq(unlocks.postId, posts.id))
+    .innerJoin(users, eq(posts.creatorId, users.id))
+    .where(eq(unlocks.fanId, fanId))
+    .orderBy(desc(unlocks.unlockedAt))
+    .limit(limit);
+}
+
+/**
+ * Notifications, derived (no dedicated table): the incoming unlock events on
+ * *this user's* posts — i.e. "someone unveiled your post". Each carries the
+ * actor, the post, the gross amount paid, and when. The creator-cut split is
+ * applied by the caller (see /api/notifications).
+ */
+export async function getNotifications(userId: string, limit = 30) {
+  const db = getDb();
+  return db
+    .select({
+      id: unlocks.id,
+      amountPaid: unlocks.amountPaid,
+      unlockedAt: unlocks.unlockedAt,
+      postId: posts.id,
+      postTitle: posts.title,
+      actorUsername: users.username,
+      actorWallet: users.walletAddress,
+      actorAvatar: users.avatar,
+    })
+    .from(unlocks)
+    .innerJoin(posts, eq(unlocks.postId, posts.id))
+    .innerJoin(users, eq(unlocks.fanId, users.id))
+    .where(eq(posts.creatorId, userId))
+    .orderBy(desc(unlocks.unlockedAt))
+    .limit(limit);
 }
