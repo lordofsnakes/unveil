@@ -16,6 +16,52 @@ export async function upsertUser(walletAddress: string) {
   return user;
 }
 
+/** Upsert a user and mark them a creator (idempotent). */
+export async function upsertCreator(walletAddress: string) {
+  const db = getDb();
+  const addr = walletAddress.toLowerCase();
+  const [user] = await db
+    .insert(users)
+    .values({ walletAddress: addr, isCreator: true })
+    .onConflictDoUpdate({
+      target: users.walletAddress,
+      set: { isCreator: true },
+    })
+    .returning();
+  return user;
+}
+
+/**
+ * Create a post. Defaults to UNPUBLISHED — the auto-blur pipeline publishes it
+ * (and overwrites `blurredPreviewUrl` with the real blurred derivative) only
+ * after the creator approves the blur. Fail-closed: nothing is public until the
+ * blur is reviewed (auto-blur PRD §11).
+ */
+export async function createPost(input: {
+  creatorId: string;
+  title: string;
+  unlockPrice: string;
+  mediaType: "image" | "video";
+  blurredPreviewUrl: string;
+  privateMediaKey: string;
+  isPublished?: boolean;
+}) {
+  const db = getDb();
+  const [post] = await db
+    .insert(posts)
+    .values({
+      creatorId: input.creatorId,
+      title: input.title,
+      unlockPrice: input.unlockPrice,
+      mediaType: input.mediaType,
+      blurredPreviewUrl: input.blurredPreviewUrl,
+      privateMediaKey: input.privateMediaKey,
+      isPublished: input.isPublished ?? false,
+    })
+    .returning();
+  return post;
+}
+
 export async function getFeed(limit = 20, offset = 0) {
   const db = getDb();
   return db.query.posts.findMany({
@@ -83,6 +129,23 @@ export async function recordUnlock(
   } finally {
     await pool.end();
   }
+}
+
+export async function getUserStats(userId: string) {
+  const db = getDb();
+  const [r] = await db
+    .select({
+      unlockCount: sql<number>`COUNT(*)`,
+      totalPaid: sql<string>`COALESCE(SUM(${unlocks.amountPaid}), 0)`,
+      avgSettleMs: sql<number>`COALESCE(ROUND(AVG(${unlocks.settlementMs})), 0)`,
+    })
+    .from(unlocks)
+    .where(eq(unlocks.fanId, userId));
+  return {
+    unlockCount: Number(r?.unlockCount ?? 0),
+    totalPaid: r?.totalPaid ?? "0",
+    avgSettleMs: Number(r?.avgSettleMs ?? 0),
+  };
 }
 
 export async function getLoyaltyBalance(userId: string): Promise<string> {

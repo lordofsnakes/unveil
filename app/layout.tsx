@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Veil",
-  description: "Pay-per-tap premium content on Tempo",
+  title: "Veil — lift the veil",
+  description: "Pay-per-tap premium content on Tempo. Tap to reveal.",
   applicationName: "Veil",
   appleWebApp: {
     capable: true,
@@ -36,8 +36,11 @@ export const viewport: Viewport = {
   maximumScale: 1, // prevent zoom on iOS form inputs
   userScalable: false,
   viewportFit: "cover", // handles iPhone notch
-  themeColor: "#000000",
+  themeColor: "#121012",
 };
+
+// Applies the persisted theme before paint (dark default → no class). No FOUC.
+const themeScript = `(function(){try{if(localStorage.getItem('veil-theme')==='light'){document.documentElement.classList.add('light')}}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -47,9 +50,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-black text-white">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className="bg-bg text-text flex min-h-full flex-col">
         <Providers>
           {children}
           <InstallBanner />

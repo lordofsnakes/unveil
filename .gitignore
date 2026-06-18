@@ -41,3 +41,13 @@ yarn-error.log*
 next-env.d.ts
 
 .claude
+NSFW.png
+test.mp4
+
+# auto-blur: local test artifacts (raw + API-returned NSFW derivatives)
+/auto-blur/api-output/
+/auto-blur/*.mp4
+/auto-blur/*.mov
+/auto-blur/*.webm
+/auto-blur/*.m4v
+/auto-blur/*.mkv

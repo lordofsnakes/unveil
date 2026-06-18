@@ -5,6 +5,16 @@ const nextConfig: NextConfig = {
   // Pin the workspace root so a stray lockfile in a parent dir isn't picked up.
   turbopack: { root: __dirname },
   outputFileTracingRoot: __dirname,
+  // Native/binary packages used by the auto-blur server code must NOT be bundled
+  // (the ffmpeg/ffprobe installers ship platform binaries + non-JS files the
+  // bundler can't trace). Load them from node_modules at runtime instead.
+  serverExternalPackages: [
+    "sharp",
+    "@ffmpeg-installer/ffmpeg",
+    "@ffprobe-installer/ffprobe",
+    "fluent-ffmpeg",
+    "replicate",
+  ],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },

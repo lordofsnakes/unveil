@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { X } from "lucide-react";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -24,23 +25,29 @@ export function InstallBanner() {
   if (!prompt || dismissed) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md rounded-2xl bg-white p-4 text-black shadow-xl">
+    <div
+      className="bg-surface border-hairline fixed inset-x-4 bottom-24 z-50 mx-auto max-w-md rounded-card border p-4"
+      style={{ boxShadow: "0 20px 60px rgba(0,0,0,.5)" }}
+    >
       <div className="flex items-center justify-between gap-3">
-        <p className="font-semibold">Install Veil</p>
+        <p className="text-text font-semibold">Install Veil</p>
         <button
           onClick={() => setDismissed(true)}
-          className="text-sm text-gray-500"
+          className="text-faint hover:text-text"
           aria-label="Dismiss"
         >
-          ✕
+          <X size={18} />
         </button>
       </div>
+      <p className="text-muted mt-1 text-[13px]">
+        Add to your home screen for the full app.
+      </p>
       <button
         onClick={async () => {
           await prompt.prompt();
           setPrompt(null);
         }}
-        className="mt-2 w-full rounded-xl bg-black py-2 font-semibold text-white"
+        className="bg-primary text-primary-fg mt-3 w-full rounded-pill py-2.5 font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.98]"
       >
         Add to Home Screen
       </button>

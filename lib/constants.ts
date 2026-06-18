@@ -36,6 +36,20 @@ export const CREATOR_CUT = 1 - PLATFORM_CUT;
 /** Default access-key spending cap, in 6-decimal units ($25). */
 export const DEFAULT_SPEND_CAP = "25000000";
 
+/**
+ * Format a stored price/amount string (e.g. "0.25000000") for display:
+ * trims trailing zeros, keeps at least 2 decimals. The raw string is what
+ * gets passed to parseUnits — only the *display* is formatted.
+ */
+export function formatUsd(amount: string | number): string {
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return "0.00";
+  const trimmed = n.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  const [int, frac = ""] = trimmed.split(".");
+  const padded = frac.length < 2 ? (frac + "00").slice(0, 2) : frac;
+  return `${int}.${padded}`;
+}
+
 export const APP_NAME = "Veil";
 export const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";

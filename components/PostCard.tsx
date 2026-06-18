@@ -1,10 +1,19 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import {
+  Heart,
+  MessageCircle,
+  CircleDollarSign,
+  Bookmark,
+  MoreHorizontal,
+  Lock,
+} from "lucide-react";
+import { Avatar } from "./ui/Avatar";
 import { UnlockButton } from "./UnlockButton";
 import { ProofChip } from "./ProofChip";
+import { RevealMedia } from "./RevealMedia";
 
 export type FeedPost = {
   id: string;
@@ -18,10 +27,13 @@ export type FeedPost = {
 export function PostCard({
   post,
   isUnlocked: initialUnlocked,
+  priority = false,
 }: {
   post: FeedPost;
   isUnlocked?: boolean;
+  priority?: boolean;
 }) {
+  const free = Number(post.unlockPrice) === 0;
   const [unlocked, setUnlocked] = useState(initialUnlocked ?? false);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [proof, setProof] = useState<{ settlementMs: number } | null>(null);
@@ -33,79 +45,68 @@ export function PostCard({
   }, []);
 
   const username = post.creator.username ?? "creator";
+  const revealed = unlocked || free;
 
   return (
-    <div className="mb-4 overflow-hidden rounded-3xl border border-gray-800/50 bg-gray-950">
+    <article
+      className="bg-surface-2 mb-4 overflow-hidden rounded-card"
+      style={{ boxShadow: "0 8px 24px rgba(0,0,0,.32)" }}
+    >
       {/* Creator header */}
-      <div className="flex items-center gap-3 p-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-600 text-sm font-bold">
-          {username[0]?.toUpperCase() ?? "?"}
+      <header className="flex items-center gap-3 px-4 pt-3.5 pb-3">
+        <Avatar name={username} src={post.creator.avatar} size="lg" verified />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] leading-tight font-semibold">{username}</p>
+          <p className="text-faint text-[12.5px] leading-snug">@{username}</p>
         </div>
-        <div>
-          <p className="text-sm font-semibold">{username}</p>
-          <p className="text-xs text-gray-500">Creator</p>
-        </div>
-      </div>
+        <button
+          className="text-faint hover:text-muted flex size-9 items-center justify-center"
+          aria-label="More"
+        >
+          <MoreHorizontal size={20} />
+        </button>
+      </header>
 
-      {/* Media area */}
-      <div className="relative aspect-square bg-gray-900">
-        <AnimatePresence mode="wait">
-          {unlocked && signedUrl ? (
-            <motion.div
-              key="revealed"
-              initial={{ opacity: 0, filter: "blur(20px)" }}
-              animate={{ opacity: 1, filter: "blur(0px)" }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="absolute inset-0"
+      {/* Caption */}
+      <p className="text-text px-4 pb-3 text-[15.5px] leading-relaxed">
+        {post.title}
+      </p>
+
+      {/* Media + blur gate / reveal */}
+      <RevealMedia
+        previewUrl={post.blurredPreviewUrl}
+        revealedUrl={signedUrl}
+        revealed={revealed}
+        alt={post.title}
+        priority={priority}
+        overlay={
+          !free && (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6"
+              style={{ background: "rgba(8,6,8,.46)" }}
             >
-              <Image
-                src={signedUrl}
-                alt={post.title}
-                fill
-                className="object-cover"
-                unoptimized
-              />
-            </motion.div>
-          ) : (
-            <motion.div key="locked" className="absolute inset-0">
-              <Image
-                src={post.blurredPreviewUrl}
-                alt="Locked content"
-                fill
-                className="object-cover"
-                style={{ filter: "blur(12px)", transform: "scale(1.1)" }}
-                sizes="(max-width: 768px) 100vw, 500px"
-                unoptimized
-              />
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/40 p-6">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-3xl">
-                  🔒
-                </div>
-                <p className="text-center font-semibold text-white">
-                  Unlock for{" "}
-                  <span className="font-bold text-purple-400">
-                    ${post.unlockPrice}
-                  </span>
-                </p>
-                <UnlockButton
-                  postId={post.id}
-                  price={post.unlockPrice}
-                  onUnlock={handleUnlock}
-                />
+              <div
+                className="border-hairline-strong flex size-[54px] items-center justify-center rounded-full"
+                style={{ background: "rgba(8,6,8,.55)", borderWidth: 1 }}
+              >
+                <Lock size={24} />
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              <UnlockButton
+                postId={post.id}
+                price={post.unlockPrice}
+                onUnlock={handleUnlock}
+              />
+            </div>
+          )
+        }
+      />
 
-      {/* Post info */}
-      <div className="p-4">
-        <p className="mb-1 text-sm font-semibold">{post.title}</p>
+      {/* Footer */}
+      <footer className="px-4 pt-3.5 pb-3.5">
         {proof && (
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-2"
+            className="mb-3"
+            style={{ animation: "vspring 0.5s var(--ease-veil) both" }}
           >
             <ProofChip
               amountUsd={post.unlockPrice}
@@ -113,7 +114,26 @@ export function PostCard({
             />
           </motion.div>
         )}
-      </div>
-    </div>
+        <div className="text-muted flex items-center gap-5">
+          <button className="flex items-center gap-1.5 text-[13.5px]" aria-label="Like">
+            <Heart size={22} strokeWidth={1.9} />
+          </button>
+          <button aria-label="Comment">
+            <MessageCircle size={22} strokeWidth={1.9} />
+          </button>
+          <button
+            className="flex items-center gap-1.5 text-[13px] font-semibold"
+            aria-label="Tip"
+          >
+            <CircleDollarSign size={22} strokeWidth={1.9} />
+            <span>Tip</span>
+          </button>
+          <div className="flex-1" />
+          <button aria-label="Save">
+            <Bookmark size={21} strokeWidth={1.9} />
+          </button>
+        </div>
+      </footer>
+    </article>
   );
 }

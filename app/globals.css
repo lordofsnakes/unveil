@@ -1,27 +1,259 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Veil design tokens — see DESIGN_PRD.md §3 (authoritative).
+   Dark is the default (:root). Light is the .light override.
+   ============================================================ */
+
 :root {
-  --background: #000000;
-  --foreground: #ededed;
+  /* Canvas & surfaces */
+  --bg: #121012;
+  --surface: #1a171a;
+  --surface-2: #211d21;
+  --surface-3: #2a252a;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* Brand — wine crimson */
+  --primary: #c2143b;
+  --primary-hover: #d81b47;
+  --primary-press: #a30f31;
+  --primary-fg: #ffffff;
+  --primary-glow: rgba(194, 20, 59, 0.45);
+  --primary-tint: rgba(194, 20, 59, 0.12);
+
+  /* Text */
+  --text: #f5f2f3;
+  --text-muted: #a8a0a4;
+  --text-faint: #6e666b;
+
+  /* Status (used sparingly) */
+  --success: #34d399;
+  --gold: #e8b339;
+  --danger: #f0506e;
+
+  /* Short-form aliases used by the ported prototype markup.
+     They reference the canonical vars above, so the .light overrides
+     flow through automatically (var() resolves at the use site). */
+  --muted: var(--text-muted);
+  --faint: var(--text-faint);
+  --glow: var(--primary-glow);
+  --tint: var(--primary-tint);
+  --hairline-2: var(--hairline-strong);
+
+  /* Radius */
+  --radius-card: 24px;
+  --radius-md: 16px;
+  --radius-pill: 9999px;
+
+  /* Elevation — tint + soft shadow, no harsh lines */
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-cta: 0 8px 28px var(--primary-glow);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-reveal: 620ms;
 }
 
+.light {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #fafaf9;
+  --surface-3: #f2f0f1;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
+
+  --primary: #b01237;
+  --primary-hover: #c2143b;
+  --primary-press: #930f2e;
+  --primary-fg: #ffffff;
+  --primary-glow: rgba(176, 18, 55, 0.28);
+  --primary-tint: rgba(176, 18, 55, 0.1);
+
+  --text: #1a1718;
+  --text-muted: #5c5559;
+  --text-faint: #8a8287;
+
+  --success: #15a06b;
+  --gold: #b8860b;
+  --danger: #d23150;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* Map semantic vars → Tailwind utilities. `inline` keeps the var
+   reference so dark/light switching stays reactive. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-press: var(--primary-press);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-tint: var(--primary-tint);
+
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  --color-success: var(--success);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+
+  --radius-card: var(--radius-card);
+  --radius-md: var(--radius-md);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-cta: var(--shadow-cta);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --ease-veil: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ============================================================
+   Keyframes (mirrors the approved prototype)
+   ============================================================ */
+@keyframes vspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes vshimmer {
+  0% {
+    transform: translateX(-130%) skewX(-14deg);
+    opacity: 0;
+  }
+  28% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(135%) skewX(-14deg);
+    opacity: 0;
+  }
+}
+@keyframes vspring {
+  0% {
+    transform: translateY(12px) scale(0.92);
+    opacity: 0;
+  }
+  58% {
+    transform: translateY(-3px) scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes vpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(52, 211, 153, 0);
+  }
+}
+@keyframes vglow {
+  0%,
+  100% {
+    box-shadow: 0 8px 26px var(--primary-glow);
+  }
+  50% {
+    box-shadow: 0 10px 40px var(--primary-glow);
+  }
+}
+@keyframes vrise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes vfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes vdrawer {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes vscrim {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+html {
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Mono numerals — tabular so prices/settle-ms/balances line up. */
+.tabular {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hide scrollbars for the native-app feel. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Focus ring in crimson, only for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* iOS safe-area helpers for fixed top/bottom chrome */
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 16px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
 }
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-reveal,
+  .motion-shimmer {
+    animation: none !important;
+  }
 }

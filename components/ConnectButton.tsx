@@ -1,6 +1,7 @@
 "use client";
 
 import { useConnect, useConnectors, useDisconnect, useAccount } from "wagmi";
+import { ScanFace } from "lucide-react";
 
 export function ConnectButton() {
   const account = useAccount();
@@ -10,13 +11,13 @@ export function ConnectButton() {
 
   if (account.status === "connected" && account.address) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-sm">
+      <div className="flex items-center gap-2.5">
+        <span className="tabular bg-surface-2 text-text rounded-pill px-3 py-1.5 text-[13px]">
           {account.address.slice(0, 6)}…{account.address.slice(-4)}
         </span>
         <button
           onClick={() => disconnect()}
-          className="text-xs text-gray-400 hover:text-white"
+          className="text-faint hover:text-text text-[13px]"
         >
           Sign out
         </button>
@@ -28,9 +29,10 @@ export function ConnectButton() {
     <button
       onClick={() => connect({ connector })}
       disabled={isPending}
-      className="rounded-2xl bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+      className="bg-primary text-primary-fg flex items-center gap-2 rounded-pill px-5 py-2.5 text-sm font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.97] disabled:opacity-60"
     >
-      {isPending ? "Opening wallet…" : "🔐 Sign in with Face ID"}
+      <ScanFace size={17} />
+      {isPending ? "Opening…" : "Sign in"}
     </button>
   );
 }

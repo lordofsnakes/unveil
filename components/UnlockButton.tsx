@@ -3,14 +3,25 @@
 import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { Hooks } from "wagmi/tempo";
-import { parseUnits, pad, stringToHex } from "viem";
-import { ALPHA_USD, STABLECOIN_DECIMALS } from "@/lib/constants";
+import { parseUnits } from "viem";
+import { Lock } from "lucide-react";
+import { ALPHA_USD, STABLECOIN_DECIMALS, formatUsd } from "@/lib/constants";
 
 const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET as
   | `0x${string}`
   | undefined;
 
 type UnlockState = "locked" | "pending" | "unlocked" | "error";
+
+function haptic(pattern: number | number[]) {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    try {
+      navigator.vibrate(pattern);
+    } catch {
+      /* unsupported — non-fatal */
+    }
+  }
+}
 
 export function UnlockButton({
   postId,
@@ -37,18 +48,18 @@ export function UnlockButton({
     }
     setState("pending");
     setError(null);
+    haptic(8); // the tap
 
     try {
       const started = Date.now();
 
-      // 32-byte memo for creator-revenue reconciliation (first 16 bytes of postId).
-      const memo = pad(stringToHex(postId.slice(0, 16)), { size: 32 });
-
+      // Plain TIP-20 transfer (access-key signed). NOTE: do NOT pass a `memo` —
+      // that routes to transferWithMemo, which the access-key spend-limit
+      // validator rejects. Reconciliation is handled in the DB (unlocks table).
       const result = await transfer.mutateAsync({
         amount: parseUnits(price, STABLECOIN_DECIMALS),
         to: PLATFORM_WALLET,
         token: ALPHA_USD,
-        memo,
       });
 
       const settlementMs = Date.now() - started;
@@ -72,6 +83,7 @@ export function UnlockButton({
 
       const { signedUrl } = (await res.json()) as { signedUrl: string };
       setState("unlocked");
+      haptic([6, 40, 12]); // settled
       onUnlock(signedUrl, settlementMs);
     } catch (err) {
       setState("error");
@@ -81,21 +93,41 @@ export function UnlockButton({
 
   if (state === "unlocked") return null;
 
+  const connected = account.status === "connected";
+  const pending = state === "pending";
+
   return (
-    <div className="w-full">
+    <div className="flex w-full flex-col items-center gap-2.5">
       <button
         onClick={handleUnlock}
-        disabled={state === "pending" || account.status !== "connected"}
-        className="w-full rounded-2xl bg-purple-600 py-4 text-lg font-bold text-white transition-all hover:bg-purple-700 disabled:opacity-50"
+        disabled={pending || !connected}
+        className="bg-primary text-primary-fg flex h-[50px] min-w-[188px] items-center justify-center gap-2.5 rounded-pill px-6 text-[15.5px] font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.96] disabled:opacity-60"
+        style={{ boxShadow: "0 8px 30px var(--primary-glow)" }}
       >
-        {state === "pending" ? "⚡ Processing…" : `🔓 Unlock for $${price}`}
+        {pending ? (
+          <>
+            <span
+              aria-hidden
+              className="size-[17px] rounded-full border-2 border-white/35 border-t-white"
+              style={{ animation: "vspin 0.7s linear infinite" }}
+            />
+            <span>Unlocking…</span>
+          </>
+        ) : (
+          <>
+            <Lock size={18} strokeWidth={2.2} />
+            <span>
+              Unlock · <span className="tabular font-medium">${formatUsd(price)}</span>
+            </span>
+          </>
+        )}
       </button>
-      {error && (
-        <p className="mt-2 text-center text-sm text-red-400">{error}</p>
-      )}
-      {account.status !== "connected" && (
-        <p className="mt-2 text-center text-xs text-gray-500">
-          Connect wallet to unlock
+
+      {error ? (
+        <p className="text-danger text-center text-xs">{error}</p>
+      ) : (
+        <p className="text-center text-xs" style={{ color: "rgba(245,242,243,.7)" }}>
+          {connected ? "Tap to unlock and reveal" : "Sign in to unlock"}
         </p>
       )}
     </div>

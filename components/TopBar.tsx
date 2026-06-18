@@ -1,12 +1,23 @@
 "use client";
 
-import { ConnectButton } from "./ConnectButton";
+import { Search } from "lucide-react";
+import { Wordmark } from "./Wordmark";
 
-export function TopBar() {
+export function TopBar({ children }: { children?: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-40 flex items-center justify-between border-b border-gray-800/50 bg-black/80 px-4 py-3 backdrop-blur-md pt-safe">
-      <h1 className="text-xl font-bold">Veil</h1>
-      <ConnectButton />
-    </div>
+    <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-md items-center justify-between px-[18px] py-3.5">
+        <Wordmark />
+        <div className="flex items-center gap-1">
+          {children}
+          <button
+            className="text-muted hover:text-text flex size-[42px] items-center justify-center"
+            aria-label="Search"
+          >
+            <Search size={22} />
+          </button>
+        </div>
+      </div>
+    </header>
   );
 }

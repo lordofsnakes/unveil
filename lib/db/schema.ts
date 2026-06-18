@@ -3,7 +3,9 @@ import {
   text,
   varchar,
   decimal,
+  numeric,
   integer,
+  jsonb,
   timestamp,
   pgEnum,
   uuid,
@@ -113,16 +115,95 @@ export const loyaltyLedger = pgTable(
   (t) => [index("loyalty_user_idx").on(t.userId)],
 );
 
+// ── blur_jobs (auto-blur pipeline) ────────────────────────────────────────────
+// One row per asset moving through the detect → (track) → composite → review
+// state machine. Mirrors auto-blur/IMPLEMENTATION.md §4. Reuses the existing
+// `media_type` enum rather than defining a duplicate.
+export const blurStatusEnum = pgEnum("blur_status", [
+  "uploaded",
+  "detecting",
+  "tracking",
+  "compositing",
+  "ready_for_review",
+  "approved",
+  "published",
+  "failed",
+  "manual_review",
+]);
+
+// Shared shape for a detected region (used for the review overlay).
+export type DetectedRegion = {
+  label: string;
+  box: [number, number, number, number]; // [x1, y1, x2, y2]
+  confidence: number;
+  frame?: number; // video only
+};
+
+export const blurJobs = pgTable(
+  "blur_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+    creatorId: uuid("creator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mediaType: mediaTypeEnum("media_type").notNull(),
+    status: blurStatusEnum("status").notNull().default("uploaded"),
+
+    rawBlobKey: text("raw_blob_key").notNull(), // private — the upload
+    blurredBlobUrl: text("blurred_blob_url"), // public — set on success
+    originalBlobKey: text("original_blob_key"), // private — set on success
+
+    // One Replicate prediction id per stage, e.g. { detect, track, composite }.
+    predictionIds: jsonb("prediction_ids")
+      .$type<Record<string, string>>()
+      .default({}),
+    detectionConfidence: numeric("detection_confidence"), // drives fail-closed routing
+    regions: jsonb("regions").$type<DetectedRegion[]>().default([]),
+    sourceFps: integer("source_fps"), // video only — so the mask track matches
+
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("blur_jobs_creator_idx").on(t.creatorId),
+    index("blur_jobs_status_idx").on(t.status),
+  ],
+);
+
+// Idempotency ledger for Replicate webhook events — a retried/duplicate event
+// (same `event.id`) must never advance the state machine twice (PRD §12.6).
+export const blurWebhookEvents = pgTable("blur_webhook_events", {
+  id: text("id").primaryKey(), // Replicate/svix event id
+  jobId: uuid("job_id"),
+  processedAt: timestamp("processed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 // ── Relations ────────────────────────────────────────────────────────────────
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
   unlocks: many(unlocks),
   loyaltyEntries: many(loyaltyLedger),
+  blurJobs: many(blurJobs),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
   creator: one(users, { fields: [posts.creatorId], references: [users.id] }),
   unlocks: many(unlocks),
+  blurJobs: many(blurJobs),
+}));
+
+export const blurJobsRelations = relations(blurJobs, ({ one }) => ({
+  creator: one(users, { fields: [blurJobs.creatorId], references: [users.id] }),
+  post: one(posts, { fields: [blurJobs.postId], references: [posts.id] }),
 }));
 
 export const unlocksRelations = relations(unlocks, ({ one }) => ({

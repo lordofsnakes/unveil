@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getUserByWallet, getLoyaltyBalance } from "@/lib/db/queries";
+import { getUserByWallet, getLoyaltyBalance, getUserStats } from "@/lib/db/queries";
 
 export const runtime = "nodejs";
 
@@ -18,10 +18,14 @@ export async function GET(req: NextRequest) {
 
   const user = await getUserByWallet(wallet);
   const points = user ? await getLoyaltyBalance(user.id) : "0";
+  const stats = user
+    ? await getUserStats(user.id)
+    : { unlockCount: 0, totalPaid: "0", avgSettleMs: 0 };
 
   return Response.json({
     wallet: wallet.toLowerCase(),
     points,
+    stats,
     veilToken: process.env.NEXT_PUBLIC_VEIL_TOKEN_ADDRESS || null,
     onchain: process.env.ENABLE_ONCHAIN_REWARDS === "true",
   });
