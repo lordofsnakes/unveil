@@ -1,9 +1,12 @@
 import { createConfig, http } from "wagmi";
 import { tempoModerato } from "wagmi/chains";
 import { tempoWallet } from "wagmi/connectors";
-import { Expiry } from "accounts";
 import { parseUnits } from "viem";
 import { ALPHA_USD, STABLECOIN_DECIMALS, TEMPO_TESTNET } from "./constants";
+
+function daysFromNow(days: number) {
+  return Math.floor(Date.now() / 1000) + days * 24 * 60 * 60;
+}
 
 /**
  * Wagmi config for Veil on Tempo Moderato testnet.
@@ -21,7 +24,7 @@ export const wagmiConfig = createConfig({
       feePayer:
         process.env.NEXT_PUBLIC_FEE_PAYER_URL ?? TEMPO_TESTNET.feeSponsor,
       authorizeAccessKey: {
-        expiry: Expiry.days(7),
+        expiry: daysFromNow(7),
         limits: [
           { token: ALPHA_USD, limit: parseUnits("25", STABLECOIN_DECIMALS) },
         ],
@@ -36,6 +39,7 @@ export const wagmiConfig = createConfig({
       process.env.TEMPO_RPC_URL ?? TEMPO_TESTNET.rpcHttp,
     ),
   },
+  storage: null,
   // App Router: enables cookie-based hydration of wallet state.
   ssr: true,
 });

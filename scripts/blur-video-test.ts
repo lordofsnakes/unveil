@@ -4,12 +4,11 @@
 //
 //   npm run blur:video -- path/to/clip.mp4
 //
-// Requires BLOB_READ_WRITE_TOKEN + REPLICATE_API_TOKEN (with credit) in
+// Requires Supabase Storage env + REPLICATE_API_TOKEN (with credit) in
 // .env.local. sam-2-video is a GPU video model — costs more than the image
 // path; keep test clips short.
 import { existsSync } from "node:fs";
-import { put, del } from "@vercel/blob";
-import { presignPrivateGet } from "../lib/blob";
+import { deletePrivate, presignPrivateGet, uploadPrivate } from "../lib/blob";
 import { processVideo, type Uploader } from "../lib/blur/pipeline-video";
 
 const OUT = "auto-blur/api-output";
@@ -25,15 +24,14 @@ async function main() {
 
   // Upload privately + presign (30-min TTL must outlive the whole tracking job).
   const upload: Uploader = async (data, name, contentType) => {
-    const blob = await put(`blur-test/${name}`, data, {
-      access: "private",
+    const blob = await uploadPrivate(`blur-test/${name}`, data, {
       contentType,
-      allowOverwrite: true,
+      upsert: true,
     });
     const url = await presignPrivateGet(blob.pathname, 60 * 30);
     return {
       url,
-      cleanup: () => del(blob.pathname, { token: process.env.BLOB_READ_WRITE_TOKEN }),
+      cleanup: () => deletePrivate(blob.pathname),
     };
   };
 

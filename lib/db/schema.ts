@@ -27,6 +27,24 @@ export const loyaltyEventTypeEnum = pgEnum("loyalty_event_type", [
 // messages reuse the existing posts/unlocks/Tempo path — see lib/db/messages.ts.
 export const messageKindEnum = pgEnum("message_kind", ["text", "ppv"]);
 
+export const custodialLedgerTypeEnum = pgEnum("custodial_ledger_type", [
+  "deposit",
+  "unlock_debit",
+  "withdrawal",
+  "refund",
+]);
+
+export const platformKeyStatusEnum = pgEnum("platform_key_status", [
+  "active",
+  "retired",
+]);
+
+export const paymentDepositStatusEnum = pgEnum("payment_deposit_status", [
+  "pending",
+  "succeeded",
+  "failed",
+]);
+
 // ── users ────────────────────────────────────────────────────────────────────
 export const users = pgTable(
   "users",
@@ -54,9 +72,9 @@ export const posts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: varchar("title", { length: 255 }).notNull(),
-    // Public blurred preview — stored in Vercel Blob (public)
+    // Public blurred preview — stored in Supabase Storage
     blurredPreviewUrl: text("blurred_preview_url").notNull(),
-    // Private full media — stored in Vercel Blob (private), URL/key only
+    // Private full media — stored in Supabase Storage (private), URL/key only
     privateMediaKey: text("private_media_key").notNull(),
     // Price in stablecoin units. e.g. "0.05" = 5 cents
     unlockPrice: decimal("unlock_price", { precision: 18, scale: 8 }).notNull(),
@@ -266,6 +284,105 @@ export const blurCostLog = pgTable(
   (t) => [index("blur_cost_job_idx").on(t.jobId)],
 );
 
+// ── user_balances ────────────────────────────────────────────────────────────
+export const userBalances = pgTable("user_balances", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  availableBalance: decimal("available_balance", {
+    precision: 18,
+    scale: 8,
+  })
+    .default("0")
+    .notNull(),
+  escrowedBalance: decimal("escrowed_balance", { precision: 18, scale: 8 })
+    .default("0")
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ── custodial_ledger ────────────────────────────────────────────────────────
+export const custodialLedger = pgTable(
+  "custodial_ledger",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventType: custodialLedgerTypeEnum("event_type").notNull(),
+    amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+    balanceAfter: decimal("balance_after", {
+      precision: 18,
+      scale: 8,
+    }).notNull(),
+    postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+    reference: varchar("reference", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("custodial_ledger_user_idx").on(t.userId, t.createdAt),
+    uniqueIndex("custodial_ledger_reference_idx").on(t.reference),
+  ],
+);
+
+// ── payment_deposits ────────────────────────────────────────────────────────
+export const paymentDeposits = pgTable(
+  "payment_deposits",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 32 }).default("stripe").notNull(),
+    providerSessionId: varchar("provider_session_id", { length: 255 })
+      .unique()
+      .notNull(),
+    providerPaymentIntentId: varchar("provider_payment_intent_id", {
+      length: 255,
+    }),
+    status: paymentDepositStatusEnum("status").default("pending").notNull(),
+    amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    creditedAt: timestamp("credited_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("payment_deposits_user_idx").on(t.userId, t.createdAt),
+    uniqueIndex("payment_deposits_provider_session_idx").on(t.providerSessionId),
+  ],
+);
+
+// ── platform_signing_keys ───────────────────────────────────────────────────
+export const platformSigningKeys = pgTable(
+  "platform_signing_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    keyId: varchar("key_id", { length: 64 }).unique().notNull(),
+    address: varchar("address", { length: 42 }).notNull(),
+    encryptedPrivateKey: text("encrypted_private_key").notNull(),
+    iv: varchar("iv", { length: 32 }).notNull(),
+    authTag: varchar("auth_tag", { length: 32 }).notNull(),
+    status: platformKeyStatusEnum("status").default("active").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("platform_signing_keys_key_id_idx").on(t.keyId),
+    index("platform_signing_keys_status_idx").on(t.status),
+  ],
+);
+
 // ── Relations ────────────────────────────────────────────────────────────────
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
@@ -273,6 +390,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   loyaltyEntries: many(loyaltyLedger),
   blurJobs: many(blurJobs),
   sentMessages: many(messages),
+  custodialLedgerEntries: many(custodialLedger),
+  paymentDeposits: many(paymentDeposits),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -305,4 +424,17 @@ export const unlocksRelations = relations(unlocks, ({ one }) => ({
 
 export const loyaltyLedgerRelations = relations(loyaltyLedger, ({ one }) => ({
   user: one(users, { fields: [loyaltyLedger.userId], references: [users.id] }),
+}));
+
+export const userBalancesRelations = relations(userBalances, ({ one }) => ({
+  user: one(users, { fields: [userBalances.userId], references: [users.id] }),
+}));
+
+export const custodialLedgerRelations = relations(custodialLedger, ({ one }) => ({
+  user: one(users, { fields: [custodialLedger.userId], references: [users.id] }),
+  post: one(posts, { fields: [custodialLedger.postId], references: [posts.id] }),
+}));
+
+export const paymentDepositsRelations = relations(paymentDeposits, ({ one }) => ({
+  user: one(users, { fields: [paymentDeposits.userId], references: [users.id] }),
 }));

@@ -83,31 +83,20 @@ export async function recordUnlock(
   settlementMs: number,
   loyaltyAmount: string,
 ) {
-  // Use Pool (WebSocket) for the multi-statement transaction.
-  const { Pool } = await import("@neondatabase/serverless");
-  const { drizzle: drizzleWs } = await import("drizzle-orm/neon-serverless");
-  const schema = await import("./schema");
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
-  const txDb = drizzleWs(pool, { schema });
-
-  try {
-    return await txDb.transaction(async (tx) => {
-      const [unlock] = await tx
-        .insert(unlocks)
-        .values({ fanId, postId, paymentTxHash, amountPaid, settlementMs })
-        .returning();
-      await tx.insert(loyaltyLedger).values({
-        userId: fanId,
-        amount: loyaltyAmount,
-        eventType: "post_unlock",
-        referenceId: unlock.id,
-        txHash: paymentTxHash,
-      });
-      return unlock;
+  return getDb().transaction(async (tx) => {
+    const [unlock] = await tx
+      .insert(unlocks)
+      .values({ fanId, postId, paymentTxHash, amountPaid, settlementMs })
+      .returning();
+    await tx.insert(loyaltyLedger).values({
+      userId: fanId,
+      amount: loyaltyAmount,
+      eventType: "post_unlock",
+      referenceId: unlock.id,
+      txHash: paymentTxHash,
     });
-  } finally {
-    await pool.end();
-  }
+    return unlock;
+  });
 }
 
 export async function getUserStats(userId: string) {

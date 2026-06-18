@@ -10,7 +10,7 @@ import type { DetectedRegion } from "@/lib/db/schema";
 
 // The pipeline must hand Replicate a fetchable URL for the keyframes and the
 // source video. The uploader is injected so lib/blur stays decoupled from any
-// specific blob store; the caller wires up Vercel Blob + presign + cleanup.
+// specific object store; the caller wires up Supabase Storage presign + cleanup.
 export type Uploader = (
   data: Buffer,
   name: string,

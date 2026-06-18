@@ -2,9 +2,7 @@ import { formatUsd } from "@/lib/constants";
 
 /**
  * "Proof of magic" chip — the beat that sells the Tempo story to judges.
- * Shown after every unlock: amount paid · settlement time · zero gas.
- * Glass pill, mono numerals, a pulsing "settled" dot (paired with the word,
- * never color alone). Springs up on reveal.
+ * Shown after every unlock: amount paid and settlement time.
  */
 export function ProofChip({
   amountUsd,
@@ -33,8 +31,6 @@ export function ProofChip({
       <span className="tabular text-text text-[12.5px]">${formatUsd(amountUsd)}</span>
       <span className="text-faint">·</span>
       <span className="tabular text-text text-[12.5px]">{settlementMs}ms</span>
-      <span className="text-faint">·</span>
-      <span className="tabular text-text text-[12.5px]">$0 gas</span>
     </div>
   );
 }

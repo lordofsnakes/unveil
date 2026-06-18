@@ -1,20 +1,19 @@
 // One-off helper for the auto-blur P0 test.
-// Uploads a local image to a PRIVATE Vercel Blob and prints a short-lived
+// Uploads a local image to private Supabase Storage and prints a short-lived
 // signed GET URL that Replicate can fetch. Also supports deleting it after.
 //
 //   tsx scripts/blur-upload.ts <localPath>          # upload + presign
 //   tsx scripts/blur-upload.ts --del <pathname>     # cleanup
 //
-// Requires BLOB_READ_WRITE_TOKEN in .env.local.
+// Requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env.local.
 import { readFileSync } from "node:fs";
-import { put, del } from "@vercel/blob";
-import { presignPrivateGet } from "../lib/blob";
+import { deletePrivate, presignPrivateGet, uploadPrivate } from "../lib/blob";
 
 async function main() {
   const [arg1, arg2] = process.argv.slice(2);
 
   if (arg1 === "--del") {
-    await del(arg2, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    await deletePrivate(arg2);
     console.log("DELETED=" + arg2);
     return;
   }
@@ -23,10 +22,9 @@ async function main() {
   if (!localPath) throw new Error("usage: tsx scripts/blur-upload.ts <localPath>");
 
   const buf = readFileSync(localPath);
-  const blob = await put("blur-test/source.png", buf, {
-    access: "private",
+  const blob = await uploadPrivate("blur-test/source.png", buf, {
     contentType: "image/png",
-    allowOverwrite: true,
+    upsert: true,
   });
 
   // 15 min — comfortably outlives a fast image prediction.

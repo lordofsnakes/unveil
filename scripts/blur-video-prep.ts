@@ -1,6 +1,6 @@
 // MCP-mode P1 helper (no local REPLICATE_API_TOKEN needed): extract a seed
 // keyframe from the clip's midpoint, upload BOTH the keyframe and the clip to
-// private blobs, and print presigned URLs. The grounding-dino + sam-2-video
+// private Supabase Storage, and print presigned URLs. The grounding-dino + sam-2-video
 // calls are then made out-of-band via the authenticated Replicate MCP.
 //
 //   tsx scripts/blur-video-prep.ts <video>
@@ -9,8 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import { put } from "@vercel/blob";
-import { presignPrivateGet } from "../lib/blob";
+import { presignPrivateGet, uploadPrivate } from "../lib/blob";
 import { probeVideo } from "../lib/blur/frames";
 
 async function main() {
@@ -29,15 +28,13 @@ async function main() {
     { stdio: "ignore" },
   );
 
-  const kfBlob = await put("blur-test/kf.jpg", readFileSync(kf), {
-    access: "private",
+  const kfBlob = await uploadPrivate("blur-test/kf.jpg", readFileSync(kf), {
     contentType: "image/jpeg",
-    allowOverwrite: true,
+    upsert: true,
   });
-  const vidBlob = await put("blur-test/clip.mp4", readFileSync(video), {
-    access: "private",
+  const vidBlob = await uploadPrivate("blur-test/clip.mp4", readFileSync(video), {
     contentType: "video/mp4",
-    allowOverwrite: true,
+    upsert: true,
   });
 
   console.log("FRAME_INDEX=" + frameIndex);

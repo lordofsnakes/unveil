@@ -4,13 +4,12 @@
 //
 //   npm run blur:test [path/to/image]      # default: auto-blur/NSFW.png
 //
-// Requires BLOB_READ_WRITE_TOKEN + REPLICATE_API_TOKEN (with credit) in
+// Requires Supabase Storage env + REPLICATE_API_TOKEN (with credit) in
 // .env.local. The Replicate account must have billing credit or the model
 // returns 402.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename } from "node:path";
-import { put, del } from "@vercel/blob";
-import { presignPrivateGet } from "../lib/blob";
+import { deletePrivate, presignPrivateGet, uploadPrivate } from "../lib/blob";
 import { processImage } from "../lib/blur/pipeline-image";
 import { fetchBuffer } from "../lib/blur/composite";
 
@@ -28,10 +27,9 @@ async function main() {
 
   // 1. Upload privately + presign so Replicate can fetch (TTL outlives the job).
   const buf = readFileSync(localPath);
-  const blob = await put(`blur-test/${basename(localPath)}`, buf, {
-    access: "private",
+  const blob = await uploadPrivate(`blur-test/${basename(localPath)}`, buf, {
     contentType: "image/png",
-    allowOverwrite: true,
+    upsert: true,
   });
   const signedUrl = await presignPrivateGet(blob.pathname, 900);
   console.log(`↑ uploaded ${localPath} → ${blob.pathname}`);
@@ -60,7 +58,7 @@ async function main() {
     }
   } finally {
     // 5. Clean up the private source blob.
-    await del(blob.pathname, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    await deletePrivate(blob.pathname);
     console.log(`✗ cleaned up ${blob.pathname}`);
   }
 }

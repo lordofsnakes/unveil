@@ -1,4 +1,3 @@
-import { Handler, Kv } from "accounts/server";
 import { APP_URL } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -10,10 +9,22 @@ export const runtime = "nodejs";
  * NOTE: Kv.memory() loses sessions on every cold start — fine for the demo,
  * swap for a durable Kv (e.g. Kv.durableObject) in production.
  */
-const handler = Handler.auth({
-  origin: APP_URL,
-  store: Kv.memory(),
-});
+let handlerPromise: Promise<{ fetch: (req: Request) => Response | Promise<Response> }> | null =
+  null;
 
-export const GET = handler.fetch;
-export const POST = handler.fetch;
+async function getHandler() {
+  handlerPromise ??= import("accounts/server").then(({ Handler, Kv }) =>
+    Handler.auth({
+      origin: APP_URL,
+      store: Kv.memory(),
+    }),
+  );
+  return handlerPromise;
+}
+
+export async function GET(req: Request) {
+  const handler = await getHandler();
+  return handler.fetch(req);
+}
+
+export const POST = GET;

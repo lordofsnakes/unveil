@@ -5,10 +5,9 @@ import { presignPrivateGet } from "@/lib/blob";
 import { PostCard, type FeedPost } from "@/components/PostCard";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
-import { ConnectGate } from "@/components/ConnectGate";
 import { EmptyState } from "@/components/EmptyState";
 
-// Feed depends on live DB + per-request wallet, so render dynamically.
+// Feed depends on live DB + per-request account state, so render dynamically.
 export const dynamic = "force-dynamic";
 
 async function loadFeed(): Promise<FeedPost[] | null> {
@@ -59,7 +58,7 @@ export default async function FeedPage() {
           <EmptyState
             icon={Database}
             title="Database not connected"
-            body="Set DATABASE_URL and run `npm run seed` to populate the feed."
+            body="Set DATABASE_URL, Supabase storage env, then run `npm run seed`."
           />
         ) : posts.length === 0 ? (
           <EmptyState
@@ -75,7 +74,6 @@ export default async function FeedPage() {
       </div>
 
       <BottomNav />
-      <ConnectGate />
     </main>
   );
 }

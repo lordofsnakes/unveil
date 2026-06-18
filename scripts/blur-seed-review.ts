@@ -4,10 +4,10 @@
 //
 //   tsx scripts/blur-seed-review.ts   → prints JOB_ID + REVIEW_URL
 import { readFileSync } from "node:fs";
-import { put } from "@vercel/blob";
 import { eq } from "drizzle-orm";
 import { getDb } from "../lib/db";
 import { users, blurJobs } from "../lib/db/schema";
+import { uploadPrivate } from "../lib/blob";
 import type { DetectedRegion } from "../lib/db/schema";
 
 async function main() {
@@ -37,15 +37,15 @@ async function main() {
     })
     .returning();
 
-  const origBlob = await put(
+  const origBlob = await uploadPrivate(
     `blur-jobs/${job.id}/original.png`,
     readFileSync("auto-blur/NSFW.png"),
-    { access: "private", contentType: "image/png", allowOverwrite: true },
+    { contentType: "image/png", upsert: true },
   );
-  const blurBlob = await put(
+  const blurBlob = await uploadPrivate(
     `blur-jobs/${job.id}/blurred.jpg`,
     readFileSync("auto-blur/api-output/blurred.jpg"),
-    { access: "private", contentType: "image/jpeg", allowOverwrite: true },
+    { contentType: "image/jpeg", upsert: true },
   );
 
   const regions: DetectedRegion[] = [

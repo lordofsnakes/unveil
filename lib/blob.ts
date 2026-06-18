@@ -1,41 +1,88 @@
-import { issueSignedToken, presignUrl, type PutBlobResult } from "@vercel/blob";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+type UploadBody = Parameters<
+  ReturnType<SupabaseClient["storage"]["from"]>["upload"]
+>[1];
+
+export type StorageUploadResult = {
+  pathname: string;
+};
+
+let supabaseAdmin: SupabaseClient | null = null;
+
+function requireEnv(name: string, value: string | undefined): string {
+  if (!value) throw new Error(`${name} is not set`);
+  return value;
+}
+
+function bucketName() {
+  return process.env.SUPABASE_STORAGE_BUCKET ?? "media";
+}
+
+function storage() {
+  if (!supabaseAdmin) {
+    supabaseAdmin = createClient(
+      requireEnv("SUPABASE_URL", process.env.SUPABASE_URL),
+      requireEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
+      {
+        auth: { persistSession: false },
+      },
+    );
+  }
+
+  return supabaseAdmin.storage.from(bucketName());
+}
+
+function normalizePath(pathname: string) {
+  return pathname.replace(/^\/+/, "");
+}
 
 /**
- * Mint a short-lived signed GET URL for a PRIVATE blob.
+ * Upload a private object to Supabase Storage. The DB stores only the object
+ * path; callers presign it on demand.
+ */
+export async function uploadPrivate(
+  pathname: string,
+  body: UploadBody,
+  options: { contentType?: string; upsert?: boolean } = {},
+): Promise<StorageUploadResult> {
+  const normalized = normalizePath(pathname);
+  const { data, error } = await storage().upload(normalized, body, {
+    contentType: options.contentType,
+    upsert: options.upsert ?? true,
+  });
+
+  if (error) throw error;
+  return { pathname: data.path };
+}
+
+/**
+ * Mint a short-lived signed GET URL for a private Supabase Storage object.
  *
- * @vercel/blob v2 flow: issue a scoped delegation token, then presign a
- * concrete object URL. The unblurred media never reaches the client until
- * payment is verified, and the URL expires quickly so it can't be shared.
- *
- * @param pathname  blob pathname, e.g. "media/<postId>/original.jpg"
- *                  (the `pathname` field returned by `put()`)
- * @param ttlSeconds  URL lifetime — 60s for images, 300s for video.
+ * @param pathname object path, e.g. "media/<postId>/original.jpg"
+ * @param ttlSeconds URL lifetime — 60s for images, 300s for video.
  */
 export async function presignPrivateGet(
   pathname: string,
   ttlSeconds = 60,
 ): Promise<string> {
-  const validUntil = Date.now() + ttlSeconds * 1000;
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const { data, error } = await storage().createSignedUrl(
+    normalizePath(pathname),
+    ttlSeconds,
+  );
 
-  const signed = await issueSignedToken({
-    pathname,
-    operations: ["get"],
-    validUntil,
-    token,
-  });
-
-  const { presignedUrl } = await presignUrl(signed, {
-    operation: "get",
-    pathname,
-    validUntil,
-    access: "private",
-  });
-
-  return presignedUrl;
+  if (error) throw error;
+  if (!data?.signedUrl) throw new Error("Supabase did not return a signed URL");
+  return data.signedUrl;
 }
 
-/** The stored key for a private blob is its pathname (stable; presign on demand). */
-export function privateKeyFromPut(result: PutBlobResult): string {
+export async function deletePrivate(pathname: string | string[]) {
+  const paths = (Array.isArray(pathname) ? pathname : [pathname]).map(normalizePath);
+  const { error } = await storage().remove(paths);
+  if (error) throw error;
+}
+
+/** The stored key for private storage is its pathname (stable; presign on demand). */
+export function privateKeyFromPut(result: StorageUploadResult): string {
   return result.pathname;
 }

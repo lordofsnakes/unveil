@@ -1,4 +1,3 @@
-import { Handler } from "accounts/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { APP_NAME, APP_URL } from "@/lib/constants";
 
@@ -11,21 +10,30 @@ export const runtime = "nodejs";
  * at `/api/relay`. The relay signs the fee-payer signature so the platform
  * covers gas and the fan only spends stablecoins.
  */
-const relayHandler = (() => {
-  const pk = process.env.RELAY_PRIVATE_KEY as `0x${string}` | undefined;
-  if (!pk) return null;
-  return Handler.relay({
-    feePayer: {
-      account: privateKeyToAccount(pk),
-      name: APP_NAME,
-      url: APP_URL,
-      // Hackathon: sponsor everything. Restrict to unlock txns before prod.
-      validate: () => true,
-    },
+let relayHandlerPromise: Promise<{
+  fetch: (req: Request) => Response | Promise<Response>;
+} | null> | null = null;
+
+async function getRelayHandler() {
+  relayHandlerPromise ??= import("accounts/server").then(({ Handler }) => {
+    const pk = process.env.RELAY_PRIVATE_KEY as `0x${string}` | undefined;
+    if (!pk) return null;
+    return Handler.relay({
+      feePayer: {
+        account: privateKeyToAccount(pk),
+        name: APP_NAME,
+        url: APP_URL,
+        // Hackathon: sponsor everything. Restrict to unlock txns before prod.
+        validate: () => true,
+      },
+    });
   });
-})();
+
+  return relayHandlerPromise;
+}
 
 export async function POST(req: Request) {
+  const relayHandler = await getRelayHandler();
   if (!relayHandler) {
     return Response.json(
       { error: "Relay not configured — using hosted sponsor" },

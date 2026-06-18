@@ -3,7 +3,7 @@ import { createJob } from "@/lib/blur/jobs";
 import { startPipeline } from "@/lib/blur/state";
 import { presignPrivateGet } from "@/lib/blob";
 
-// neon + @vercel/blob signing + (video) ffmpeg keyframe extraction need Node.
+// Postgres + Supabase Storage signing + video keyframe extraction need Node.
 export const runtime = "nodejs";
 // Just enough to create the job and kick off the first stage — NOT to process.
 export const maxDuration = 60;

@@ -1,12 +1,11 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
-import { put } from "@vercel/blob";
+import { uploadPrivate, presignPrivateGet } from "@/lib/blob";
 import {
   upsertCreator,
   getUserByWallet,
   getPostsByCreator,
 } from "@/lib/db/queries";
-import { presignPrivateGet } from "@/lib/blob";
 import { formatUsd } from "@/lib/constants";
 import { createJob, updateJob } from "@/lib/blur/jobs";
 
@@ -38,12 +37,12 @@ export async function GET(req: NextRequest) {
 }
 
 // Soft cap to stay well under serverless request-body limits. Large videos
-// should use Vercel Blob client upload (auto-blur PRD §10) — a follow-up.
+// should use a direct Supabase Storage upload flow — a follow-up.
 const MAX_BYTES = 25 * 1024 * 1024;
 
 /**
  * Creator upload. The UPLOAD side of the auto-blur flow (Option A):
- *   1. store the raw media as a PRIVATE blob (this is what the blur pipeline reads)
+ *   1. store the raw media as a private object (this is what the blur pipeline reads)
  *   2. enqueue a `blur_jobs` row (status "uploaded") carrying the draft caption +
  *      price — the POST itself is created later, at approve, by publishJob()
  *   3. best-effort kick off detection IF Replicate is configured (never blocks)
@@ -101,10 +100,13 @@ export async function POST(req: NextRequest) {
 
   let rawBlobKey: string;
   try {
-    const blob = await put(`uploads/${creator.id}/${randomUUID()}.${ext}`, buffer, {
-      access: "private",
-      contentType: file.type || "application/octet-stream",
-    });
+    const blob = await uploadPrivate(
+      `uploads/${creator.id}/${randomUUID()}.${ext}`,
+      buffer,
+      {
+        contentType: file.type || "application/octet-stream",
+      },
+    );
     rawBlobKey = blob.pathname;
   } catch (err) {
     return Response.json(

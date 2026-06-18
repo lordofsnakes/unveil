@@ -1,12 +1,12 @@
 // Seed demo content: a creator + posts, a fan with unlocks (so the collection
 // and notifications populate), and a DM thread with text + one PPV message.
-// Uploads a public blurred preview and a PRIVATE full image per post.
+// Uploads a private blurred preview and a private full image per post to
+// Supabase Storage.
 //
 //   npm run seed
 //
-// Requires DATABASE_URL and BLOB_READ_WRITE_TOKEN in .env.local.
+// Requires DATABASE_URL, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY in .env.local.
 import { randomBytes } from "node:crypto";
-import { put } from "@vercel/blob";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../lib/db";
 import {
@@ -18,6 +18,7 @@ import {
   messages,
 } from "../lib/db/schema";
 import { POINTS_PER_UNLOCK } from "../lib/constants";
+import { uploadPrivate } from "../lib/blob";
 import { makeFull, makePreview } from "./demo-image";
 
 const DEMO_CREATOR_WALLET =
@@ -37,8 +38,9 @@ const txHash = () => "0x" + randomBytes(32).toString("hex");
 
 async function seed() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL not set");
-  if (!process.env.BLOB_READ_WRITE_TOKEN)
-    throw new Error("BLOB_READ_WRITE_TOKEN not set");
+  if (!process.env.SUPABASE_URL) throw new Error("SUPABASE_URL not set");
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY not set");
 
   const db = getDb();
 
@@ -82,15 +84,16 @@ async function seed() {
     const full = makeFull(s);
     const preview = makePreview(s);
 
-    const previewBlob = await put(`previews/${name}.png`, preview, {
-      access: "private",
+    // Blurred preview — stored private; the feed presigns it server-side.
+    const previewBlob = await uploadPrivate(`previews/${name}.png`, preview, {
       contentType: "image/png",
-      allowOverwrite: true,
+      upsert: true,
     });
-    const privateBlob = await put(`media/${name}/original.png`, full, {
-      access: "private",
+
+    // Full media — only reachable via a short-lived signed URL after payment.
+    const privateBlob = await uploadPrivate(`media/${name}/original.png`, full, {
       contentType: "image/png",
-      allowOverwrite: true,
+      upsert: true,
     });
 
     const [post] = await db

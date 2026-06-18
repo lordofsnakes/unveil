@@ -1,10 +1,10 @@
 // MCP-mode P1 helper: given the sam-2-video mask-video URL, download it and run
 // the REAL composite-video.ts (blur + feathered alpha + overlay + audio mux)
-// against the source clip, then probe the result and clean up the blobs.
+// against the source clip, then probe the result and clean up storage objects.
 //
 //   tsx scripts/blur-video-finish.ts <sourceVideo> <maskUrl> <videoPathname> <kfPathname>
 import { writeFileSync, mkdirSync } from "node:fs";
-import { del } from "@vercel/blob";
+import { deletePrivate } from "../lib/blob";
 import { fetchBuffer } from "../lib/blur/composite";
 import { compositeVideoBlur } from "../lib/blur/composite-video";
 import { probeVideo } from "../lib/blur/frames";
@@ -33,9 +33,8 @@ async function main() {
   );
   if (!m.hasAudio) console.log("  ⚠ no audio in output (source may have been silent)");
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (vidPathname) await del(vidPathname, { token });
-  if (kfPathname) await del(kfPathname, { token });
+  if (vidPathname) await deletePrivate(vidPathname);
+  if (kfPathname) await deletePrivate(kfPathname);
   if (vidPathname || kfPathname) console.log("✗ cleaned up source blobs");
 }
 

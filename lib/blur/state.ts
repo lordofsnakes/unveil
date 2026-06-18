@@ -1,5 +1,4 @@
-import { put } from "@vercel/blob";
-import { presignPrivateGet } from "@/lib/blob";
+import { presignPrivateGet, uploadPrivate } from "@/lib/blob";
 import {
   createPredictionWithRetry,
   DESIRED_REGIONS,
@@ -146,10 +145,9 @@ async function onCogComplete(job: BlurJob, output: unknown) {
 
   await updateJob(job.id, { status: "compositing" });
   const ext = job.mediaType === "video" ? "mp4" : "jpg";
-  const blob = await put(`blur-jobs/${job.id}/blurred.${ext}`, await fetchBuffer(o.media), {
-    access: "private",
+  const blob = await uploadPrivate(`blur-jobs/${job.id}/blurred.${ext}`, await fetchBuffer(o.media), {
     contentType: job.mediaType === "video" ? "video/mp4" : "image/jpeg",
-    allowOverwrite: true,
+    upsert: true,
   });
   await updateJob(job.id, {
     status: "ready_for_review",
@@ -226,10 +224,9 @@ async function compositeImageStage(job: BlurJob, maskUrl: string, coverage: numb
   await updateJob(job.id, { status: "compositing" });
   const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
   const blurred = await compositeImageBlur(rawUrl, maskUrl);
-  const blob = await put(`blur-jobs/${job.id}/blurred.jpg`, blurred, {
-    access: "private",
+  const blob = await uploadPrivate(`blur-jobs/${job.id}/blurred.jpg`, blurred, {
     contentType: "image/jpeg",
-    allowOverwrite: true,
+    upsert: true,
   });
   await updateJob(job.id, {
     status: "ready_for_review",
@@ -263,10 +260,9 @@ async function onTrackComplete(job: BlurJob, output: unknown) {
 
     await compositeVideoBlur(srcPath, maskPath, outPath);
 
-    const blob = await put(`blur-jobs/${job.id}/blurred.mp4`, readFileSync(outPath), {
-      access: "private",
+    const blob = await uploadPrivate(`blur-jobs/${job.id}/blurred.mp4`, readFileSync(outPath), {
       contentType: "video/mp4",
-      allowOverwrite: true,
+      upsert: true,
     });
     await updateJob(job.id, {
       status: "ready_for_review",
@@ -299,10 +295,9 @@ async function extractFirstFrame(
     execFileSync(ffmpeg.path, ["-y", "-i", vid, "-vframes", "1", "-q:v", "2", frame], {
       stdio: "ignore",
     });
-    const blob = await put(`blur-jobs/${jobId}/keyframe.jpg`, readFileSync(frame), {
-      access: "private",
+    const blob = await uploadPrivate(`blur-jobs/${jobId}/keyframe.jpg`, readFileSync(frame), {
       contentType: "image/jpeg",
-      allowOverwrite: true,
+      upsert: true,
     });
     return { keyframeUrl: await presignPrivateGet(blob.pathname, TTL), fps };
   } finally {

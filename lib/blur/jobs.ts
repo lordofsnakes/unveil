@@ -74,48 +74,39 @@ export async function publishJob(
   jobId: string,
   opts: { title?: string; unlockPrice?: string } = {},
 ) {
-  const { Pool } = await import("@neondatabase/serverless");
-  const { drizzle } = await import("drizzle-orm/neon-serverless");
-  const schema = await import("@/lib/db/schema");
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
-  const txDb = drizzle(pool, { schema });
-  try {
-    return await txDb.transaction(async (tx) => {
-      const job = await tx.query.blurJobs.findFirst({ where: eq(blurJobs.id, jobId) });
-      if (!job) throw new Error("job not found");
-      if (job.status !== "ready_for_review" && job.status !== "approved") {
-        throw new Error(`job not approvable (status=${job.status})`);
-      }
-      if (!job.blurredBlobUrl) throw new Error("job has no blurred derivative");
+  return getDb().transaction(async (tx) => {
+    const job = await tx.query.blurJobs.findFirst({ where: eq(blurJobs.id, jobId) });
+    if (!job) throw new Error("job not found");
+    if (job.status !== "ready_for_review" && job.status !== "approved") {
+      throw new Error(`job not approvable (status=${job.status})`);
+    }
+    if (!job.blurredBlobUrl) throw new Error("job has no blurred derivative");
 
-      // Approve request overrides the draft captured at upload; fall back to it.
-      const title = opts.title?.trim() || job.draftTitle || "Untitled";
-      const unlockPrice = opts.unlockPrice || job.draftPrice || "0.05";
+    // Approve request overrides the draft captured at upload; fall back to it.
+    const title = opts.title?.trim() || job.draftTitle || "Untitled";
+    const unlockPrice = opts.unlockPrice || job.draftPrice || "0.05";
 
-      const [post] = await tx
-        .insert(posts)
-        .values({
-          creatorId: job.creatorId,
-          title,
-          blurredPreviewUrl: job.blurredBlobUrl, // pathname — feed presigns it
-          privateMediaKey: job.originalBlobKey ?? job.rawBlobKey,
-          unlockPrice,
-          mediaType: job.mediaType,
-          isPublished: true,
-        })
-        .returning();
+    const [post] = await tx
+      .insert(posts)
+      .values({
+        creatorId: job.creatorId,
+        title,
+        blurredPreviewUrl: job.blurredBlobUrl, // pathname — feed presigns it
+        privateMediaKey: job.originalBlobKey ?? job.rawBlobKey,
+        unlockPrice,
+        mediaType: job.mediaType,
+        isPublished: true,
+      })
+      .returning();
 
-      const [updated] = await tx
-        .update(blurJobs)
-        .set({ status: "published", postId: post.id, updatedAt: new Date() })
-        .where(eq(blurJobs.id, jobId))
-        .returning();
+    const [updated] = await tx
+      .update(blurJobs)
+      .set({ status: "published", postId: post.id, updatedAt: new Date() })
+      .where(eq(blurJobs.id, jobId))
+      .returning();
 
-      return { post, job: updated };
-    });
-  } finally {
-    await pool.end();
-  }
+    return { post, job: updated };
+  });
 }
 
 // ── Webhook idempotency ───────────────────────────────────────────────────────

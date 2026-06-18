@@ -35,7 +35,7 @@ export function UnlockButton({
               className="size-[17px] rounded-full border-2 border-white/35 border-t-white"
               style={{ animation: "vspin 0.7s linear infinite" }}
             />
-            <span>Unlocking…</span>
+            <span>Unlocking...</span>
           </>
         ) : (
           <>
@@ -51,7 +51,7 @@ export function UnlockButton({
         <p className="text-danger text-center text-xs">{error}</p>
       ) : (
         <p className="text-center text-xs" style={{ color: "rgba(245,242,243,.7)" }}>
-          {connected ? "Tap to unlock and reveal" : "Sign in to unlock"}
+          Tap to unlock and reveal
         </p>
       )}
     </div>

@@ -1,17 +1,12 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
+import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
+import { getPgPool } from "./pool";
 
-// Lazy singleton — never call neon() at module top-level in serverless.
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getDb() {
   if (!_db) {
-    if (!process.env.DATABASE_URL) {
-      throw new Error("DATABASE_URL is not set");
-    }
-    const sql = neon(process.env.DATABASE_URL);
-    _db = drizzle(sql, { schema });
+    _db = drizzle(getPgPool(), { schema });
   }
   return _db;
 }
