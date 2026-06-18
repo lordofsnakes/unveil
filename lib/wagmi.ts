@@ -23,13 +23,13 @@ export const wagmiConfig = createConfig({
       testnet: true,
       feePayer:
         process.env.NEXT_PUBLIC_FEE_PAYER_URL ?? TEMPO_TESTNET.feeSponsor,
-      authorizeAccessKey: {
+      authorizeAccessKey: () => ({
         expiry: daysFromNow(7),
         limits: [
           { token: ALPHA_USD, limit: parseUnits("25", STABLECOIN_DECIMALS) },
         ],
         scopes: [{ address: ALPHA_USD }],
-      },
+      }),
     }),
   ],
   // Prevent injected wallets (MetaMask, etc.) from hijacking the connector.

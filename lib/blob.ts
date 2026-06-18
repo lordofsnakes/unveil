@@ -1,8 +1,17 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  del as deleteBlob,
+  issueSignedToken,
+  presignUrl,
+  put,
+  type PutBlobResult,
+} from "@vercel/blob";
 
-type UploadBody = Parameters<
+type SupabaseUploadBody = Parameters<
   ReturnType<SupabaseClient["storage"]["from"]>["upload"]
 >[1];
+type BlobUploadBody = Parameters<typeof put>[1];
+type UploadBody = SupabaseUploadBody | BlobUploadBody;
 
 export type StorageUploadResult = {
   pathname: string;
@@ -17,6 +26,14 @@ function requireEnv(name: string, value: string | undefined): string {
 
 function bucketName() {
   return process.env.SUPABASE_STORAGE_BUCKET ?? "media";
+}
+
+function hasSupabaseStorage() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function requireBlobToken() {
+  return requireEnv("BLOB_READ_WRITE_TOKEN", process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 function storage() {
@@ -47,7 +64,18 @@ export async function uploadPrivate(
   options: { contentType?: string; upsert?: boolean } = {},
 ): Promise<StorageUploadResult> {
   const normalized = normalizePath(pathname);
-  const { data, error } = await storage().upload(normalized, body, {
+
+  if (!hasSupabaseStorage()) {
+    requireBlobToken();
+    const blob = await put(normalized, body as BlobUploadBody, {
+      access: "private",
+      allowOverwrite: options.upsert ?? true,
+      contentType: options.contentType,
+    });
+    return { pathname: blob.pathname };
+  }
+
+  const { data, error } = await storage().upload(normalized, body as SupabaseUploadBody, {
     contentType: options.contentType,
     upsert: options.upsert ?? true,
   });
@@ -66,6 +94,24 @@ export async function presignPrivateGet(
   pathname: string,
   ttlSeconds = 60,
 ): Promise<string> {
+  if (!hasSupabaseStorage()) {
+    const validUntil = Date.now() + ttlSeconds * 1000;
+    const signed = await issueSignedToken({
+      pathname: normalizePath(pathname),
+      operations: ["get"],
+      validUntil,
+      token: requireBlobToken(),
+    });
+
+    const { presignedUrl } = await presignUrl(signed, {
+      operation: "get",
+      pathname: normalizePath(pathname),
+      validUntil,
+      access: "private",
+    });
+    return presignedUrl;
+  }
+
   const { data, error } = await storage().createSignedUrl(
     normalizePath(pathname),
     ttlSeconds,
@@ -78,11 +124,16 @@ export async function presignPrivateGet(
 
 export async function deletePrivate(pathname: string | string[]) {
   const paths = (Array.isArray(pathname) ? pathname : [pathname]).map(normalizePath);
+  if (!hasSupabaseStorage()) {
+    requireBlobToken();
+    await deleteBlob(paths);
+    return;
+  }
   const { error } = await storage().remove(paths);
   if (error) throw error;
 }
 
 /** The stored key for private storage is its pathname (stable; presign on demand). */
-export function privateKeyFromPut(result: StorageUploadResult): string {
+export function privateKeyFromPut(result: StorageUploadResult | PutBlobResult): string {
   return result.pathname;
 }
