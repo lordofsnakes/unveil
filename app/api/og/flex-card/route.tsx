@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(55% 75% at 86% 8%, rgba(194,20,59,0.55), rgba(194,20,59,0) 60%)",
+              "radial-gradient(58% 80% at 90% 0%, rgba(194,20,59,0.75), rgba(194,20,59,0.12) 42%, rgba(194,20,59,0) 62%)",
           }}
         />
 
