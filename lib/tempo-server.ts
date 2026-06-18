@@ -1,7 +1,10 @@
 import {
   createWalletClient,
+  createPublicClient,
   http,
   parseUnits,
+  parseEventLogs,
+  erc20Abi,
   pad,
   stringToHex,
 } from "viem";
@@ -9,42 +12,77 @@ import { privateKeyToAccount } from "viem/accounts";
 import { Chain, tempoActions } from "viem/tempo";
 import { ALPHA_USD, STABLECOIN_DECIMALS, TEMPO_TESTNET } from "./constants";
 
+export type PaymentCheck = { ok: true } | { ok: false; reason: string };
+
+const eq = (a?: string, b?: string) =>
+  !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
 /**
- * Verify a Tempo payment receipt server-side.
+ * Verify, server-side, that `txHash` is a real on-chain payment for this unlock:
+ *  1. the receipt exists and succeeded;
+ *  2. it contains a TIP-20 `Transfer` of the AlphaUSD token (`ALPHA_USD`)
+ *  3. whose recipient is the platform wallet,
+ *  4. for at least the post's price, and
+ *  5. sent FROM the fan's wallet.
  *
- * Hackathon level: confirm the tx exists and its receipt status is success
- * (0x1). Production hardening (a TODO): decode the TIP-20 Transfer log to
- * assert the recipient == platform wallet and value >= unlock price.
+ * A single Tempo transfer emits multiple logs (the real Transfer, a memo event,
+ * and a fee Transfer to the fee-manager `0xfeec…`), so we match the specific
+ * Transfer by `address == token` AND `to == platform`, never just the first log.
  */
 export async function verifyTempoPayment(
   txHash: string,
-  _expectedAmount: string,
-  _fromAddress: string,
-): Promise<boolean> {
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
-
-  try {
-    const res = await fetch(TEMPO_TESTNET.rpcHttp, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getTransactionReceipt",
-        params: [txHash],
-      }),
-      // Receipts settle in ~500ms; don't hang the request forever.
-      signal: AbortSignal.timeout(8000),
-    });
-    const json = (await res.json()) as {
-      result?: { status?: string } | null;
-    };
-    const result = json.result;
-    if (!result) return false;
-    return result.status === "0x1";
-  } catch {
-    return false;
+  expectedAmountUsd: string,
+  fromAddress: string,
+): Promise<PaymentCheck> {
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    return { ok: false, reason: "bad tx hash" };
   }
+  const platform = process.env.PLATFORM_WALLET_ADDRESS;
+  if (!platform) return { ok: false, reason: "platform wallet not configured" };
+
+  const client = createPublicClient({
+    chain: Chain.moderato,
+    transport: http(process.env.TEMPO_RPC_URL ?? TEMPO_TESTNET.rpcHttp),
+  });
+
+  let receipt;
+  try {
+    receipt = await client.getTransactionReceipt({
+      hash: txHash as `0x${string}`,
+    });
+  } catch {
+    return { ok: false, reason: "receipt not found" };
+  }
+  if (receipt.status !== "success") {
+    return { ok: false, reason: "tx not successful" };
+  }
+
+  // Decode every ERC-20/TIP-20 Transfer in the receipt.
+  const transfers = parseEventLogs({
+    abi: erc20Abi,
+    eventName: "Transfer",
+    logs: receipt.logs,
+  });
+
+  const required = parseUnits(expectedAmountUsd, STABLECOIN_DECIMALS);
+
+  // The payment: AlphaUSD Transfer → platform wallet, for >= price.
+  const payment = transfers.find(
+    (t) =>
+      eq(t.address, ALPHA_USD) &&
+      eq(t.args.to, platform) &&
+      t.args.value >= required,
+  );
+  if (!payment) {
+    return { ok: false, reason: "no matching payment transfer" };
+  }
+
+  // The payment must originate from the fan claiming the unlock.
+  if (!eq(payment.args.from, fromAddress)) {
+    return { ok: false, reason: "payment sender mismatch" };
+  }
+
+  return { ok: true };
 }
 
 /**

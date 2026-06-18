@@ -47,14 +47,27 @@ export async function POST(req: NextRequest) {
     return Response.json({ signedUrl, alreadyUnlocked: true });
   }
 
-  // 4. Verify payment on-chain.
-  const isValid = await verifyTempoPayment(
+  // 3b. A given on-chain payment can unlock exactly one post — reject replays
+  //     of a tx hash already used for any other unlock.
+  const txUsed = await db.query.unlocks.findFirst({
+    where: eq(unlocks.paymentTxHash, paymentTxHash),
+  });
+  if (txUsed) {
+    return Response.json({ error: "Payment already used" }, { status: 409 });
+  }
+
+  // 4. Verify the payment on-chain: a real AlphaUSD Transfer to the platform
+  //    wallet, for >= the post price, sent from this fan.
+  const check = await verifyTempoPayment(
     paymentTxHash,
     post.unlockPrice,
     walletAddress,
   );
-  if (!isValid) {
-    return Response.json({ error: "Payment not verified" }, { status: 402 });
+  if (!check.ok) {
+    return Response.json(
+      { error: "Payment not verified", reason: check.reason },
+      { status: 402 },
+    );
   }
 
   // 5. Record unlock + loyalty points (atomic, off-chain ledger).
