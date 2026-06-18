@@ -24,10 +24,13 @@ const TTL = 60 * 30; // signed-URL lifetime — must outlive the whole pipeline
 // Stage 1 — DETECT (kicked off by ingest). Starts a Replicate prediction with a
 // webhook; never awaits completion.
 // ════════════════════════════════════════════════════════════════════════════
+export type DetectOpts = { dilation?: number; boxThreshold?: number };
+
 export async function detectStage(
   jobId: string,
   rawUrl: string,
   mediaType: "image" | "video",
+  opts: DetectOpts = {},
 ) {
   const replicate = getReplicate();
 
@@ -39,7 +42,7 @@ export async function detectStage(
         image: rawUrl,
         mask_prompt: DESIRED_REGIONS.join(","),
         negative_mask_prompt: NEGATIVE_REGIONS.join(","),
-        adjustment_factor: Number(process.env.BLUR_MASK_DILATION ?? 12),
+        adjustment_factor: opts.dilation ?? Number(process.env.BLUR_MASK_DILATION ?? 12),
       },
       webhook: webhookUrl(jobId, "detect"),
       webhook_events_filter: ["completed"],
@@ -56,7 +59,7 @@ export async function detectStage(
     input: {
       image: keyframeUrl,
       query: DESIRED_REGIONS.join(","),
-      box_threshold: Number(process.env.BLUR_BOX_THRESHOLD ?? 0.3),
+      box_threshold: opts.boxThreshold ?? Number(process.env.BLUR_BOX_THRESHOLD ?? 0.3),
       text_threshold: 0.25,
       show_visualisation: false,
     },

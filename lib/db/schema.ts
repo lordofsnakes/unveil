@@ -187,6 +187,23 @@ export const blurWebhookEvents = pgTable("blur_webhook_events", {
     .notNull(),
 });
 
+// Per-stage cost/observability log — record Replicate's reported predict_time
+// on every completed stage so spend is observed, not estimated (PRD §14).
+export const blurCostLog = pgTable(
+  "blur_cost_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobId: uuid("job_id"),
+    stage: text("stage").notNull(),
+    predictTime: numeric("predict_time"), // seconds of GPU/CPU, from event.metrics
+    status: text("status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("blur_cost_job_idx").on(t.jobId)],
+);
+
 // ── Relations ────────────────────────────────────────────────────────────────
 export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { verifyReplicateWebhook } from "@/lib/blur/webhook";
 import { advance } from "@/lib/blur/state";
-import { claimWebhookEvent } from "@/lib/blur/jobs";
+import { claimWebhookEvent, logCost } from "@/lib/blur/jobs";
 
 export const runtime = "nodejs";
 // Image composite is fast; video composite can be slow (moves to a worker in P4/P5).
@@ -34,7 +34,15 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true, deduped: true });
   }
 
-  // 3. Advance the state machine.
+  // 3. Cost/observability — record Replicate's reported predict_time per stage.
+  await logCost({
+    jobId,
+    stage,
+    predictTime: event.metrics?.predict_time,
+    status: event.status,
+  });
+
+  // 4. Advance the state machine.
   if (event.status === "failed" || event.status === "canceled") {
     await advance(jobId, stage, { error: event.error ?? "prediction failed" });
   } else if (event.status === "succeeded") {

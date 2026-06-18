@@ -1,10 +1,15 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, and, inArray, lt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   blurJobs,
   blurWebhookEvents,
+  blurCostLog,
   blurStatusEnum,
+  posts,
 } from "@/lib/db/schema";
+
+// Non-terminal states a job can get stuck in if a webhook is missed.
+const IN_FLIGHT: BlurStatus[] = ["uploaded", "detecting", "tracking", "compositing"];
 
 export type BlurStatus = (typeof blurStatusEnum.enumValues)[number];
 type JobPatch = Partial<typeof blurJobs.$inferInsert>;
@@ -59,6 +64,56 @@ export async function addPredictionId(id: string, stage: string, predictionId: s
     .where(eq(blurJobs.id, id));
 }
 
+/**
+ * Approve → publish (P3). Atomically creates the public `posts` row from the
+ * job's blurred derivative and flips the job to `published`. Both blob fields
+ * store PATHNAMES (this store is private-only; the feed presigns on demand —
+ * same convention as scripts/seed.ts). Nothing is public until this runs.
+ */
+export async function publishJob(
+  jobId: string,
+  opts: { title: string; unlockPrice: string },
+) {
+  const { Pool } = await import("@neondatabase/serverless");
+  const { drizzle } = await import("drizzle-orm/neon-serverless");
+  const schema = await import("@/lib/db/schema");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+  const txDb = drizzle(pool, { schema });
+  try {
+    return await txDb.transaction(async (tx) => {
+      const job = await tx.query.blurJobs.findFirst({ where: eq(blurJobs.id, jobId) });
+      if (!job) throw new Error("job not found");
+      if (job.status !== "ready_for_review" && job.status !== "approved") {
+        throw new Error(`job not approvable (status=${job.status})`);
+      }
+      if (!job.blurredBlobUrl) throw new Error("job has no blurred derivative");
+
+      const [post] = await tx
+        .insert(posts)
+        .values({
+          creatorId: job.creatorId,
+          title: opts.title,
+          blurredPreviewUrl: job.blurredBlobUrl, // pathname — feed presigns it
+          privateMediaKey: job.originalBlobKey ?? job.rawBlobKey,
+          unlockPrice: opts.unlockPrice,
+          mediaType: job.mediaType,
+          isPublished: true,
+        })
+        .returning();
+
+      const [updated] = await tx
+        .update(blurJobs)
+        .set({ status: "published", postId: post.id, updatedAt: new Date() })
+        .where(eq(blurJobs.id, jobId))
+        .returning();
+
+      return { post, job: updated };
+    });
+  } finally {
+    await pool.end();
+  }
+}
+
 // ── Webhook idempotency ───────────────────────────────────────────────────────
 /**
  * Atomically claim a webhook event. Returns true only the FIRST time an event
@@ -76,4 +131,30 @@ export async function claimWebhookEvent(
     .onConflictDoNothing()
     .returning({ id: blurWebhookEvents.id });
   return rows.length > 0;
+}
+
+// ── Cost / observability ──────────────────────────────────────────────────────
+export async function logCost(input: {
+  jobId?: string | null;
+  stage: string;
+  predictTime?: number | null;
+  status: string;
+}) {
+  await getDb().insert(blurCostLog).values({
+    jobId: input.jobId ?? null,
+    stage: input.stage,
+    predictTime: input.predictTime != null ? String(input.predictTime) : null,
+    status: input.status,
+  });
+}
+
+// ── Reconciliation ────────────────────────────────────────────────────────────
+/** Jobs in a non-terminal state whose last update is older than the cutoff —
+ *  candidates for a missed-webhook poll. */
+export async function findStuckJobs(olderThanMs: number) {
+  const cutoff = new Date(Date.now() - olderThanMs);
+  return getDb().query.blurJobs.findMany({
+    where: and(inArray(blurJobs.status, IN_FLIGHT), lt(blurJobs.updatedAt, cutoff)),
+    limit: 50,
+  });
 }
