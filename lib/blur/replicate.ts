@@ -51,18 +51,37 @@ type CreateArgs = Parameters<Replicate["predictions"]["create"]>[0];
 
 export async function createPredictionWithRetry(input: CreateArgs, attempts = 4) {
   const replicate = getReplicate();
+  return withReplicateCreateRetry(() => replicate.predictions.create(input), attempts);
+}
+
+export async function withReplicateCreateRetry<T>(
+  create: () => Promise<T>,
+  attempts = 4,
+): Promise<T> {
   for (let i = 0; ; i++) {
     try {
-      return await replicate.predictions.create(input);
+      return await create();
     } catch (err) {
       const status =
         (err as { response?: { status?: number } })?.response?.status ??
         (err as { status?: number })?.status;
-      const is429 = status === 429 || /\b429\b/.test(String((err as Error)?.message));
+      const message = String((err as Error)?.message);
+      const is429 = status === 429 || /\b429\b/.test(message);
       if (!is429 || i >= attempts - 1) throw err;
-      await new Promise((r) => setTimeout(r, 12_000)); // 6/min window
+      await new Promise((r) => setTimeout(r, retryDelayMs(err)));
     }
   }
+}
+
+function retryDelayMs(err: unknown): number {
+  const retryAfter =
+    (err as { response?: { headers?: { get?: (name: string) => string | null } } })?.response
+      ?.headers?.get?.("retry-after") ??
+    (err as { retry_after?: string | number })?.retry_after ??
+    String((err as Error)?.message).match(/retry[_ -]?after["': ]+(\d+)/i)?.[1];
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.max(1_000, seconds * 1_000);
+  return 12_000; // 6/min low-credit window refills roughly every 10 seconds.
 }
 
 // Region prompt taxonomy — TUNE empirically (PRD open question #1).

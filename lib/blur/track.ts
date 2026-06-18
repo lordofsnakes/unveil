@@ -1,4 +1,9 @@
-import { getReplicate, MODELS } from "./replicate";
+import {
+  getReplicate,
+  MODELS,
+  createPredictionWithRetry,
+  withReplicateCreateRetry,
+} from "./replicate";
 import { regionsToSam2Clicks } from "./geometry";
 import type { DetectedRegion } from "@/lib/db/schema";
 
@@ -26,9 +31,11 @@ export async function runTrackMasks(
   fps = 30,
 ): Promise<string> {
   const replicate = getReplicate();
-  const out = await replicate.run(MODELS.sam2Video.ref, {
-    input: sam2Input(videoUrl, regions, fps),
-  });
+  const out = await withReplicateCreateRetry(() =>
+    replicate.run(MODELS.sam2Video.ref, {
+      input: sam2Input(videoUrl, regions, fps),
+    }),
+  );
   return Array.isArray(out) ? String(out[0]) : String(out);
 }
 
@@ -42,8 +49,7 @@ export async function startTrackMasks(
   webhookUrl: string,
   fps = 30,
 ) {
-  const replicate = getReplicate();
-  return replicate.predictions.create({
+  return createPredictionWithRetry({
     version: process.env.REPLICATE_SAM2_VIDEO_VERSION!,
     input: sam2Input(videoUrl, regions, fps),
     webhook: webhookUrl,

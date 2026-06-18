@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const PROCESSING = ["uploaded", "detecting", "tracking", "compositing"];
 import { ShieldCheck, RotateCcw, UserCog, CircleCheck, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { RegionOverlay } from "./RegionOverlay";
 import { BlurProgress } from "./BlurProgress";
 import type { DetectedRegion } from "@/lib/db/schema";
+
+const PROCESSING = ["uploaded", "detecting", "tracking", "compositing"];
 
 type Action = "approve" | "adjust" | "manual";
 
