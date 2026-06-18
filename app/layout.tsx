@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { InstallBanner } from "@/components/InstallBanner";
@@ -33,8 +34,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1, // prevent zoom on iOS form inputs
-  userScalable: false,
   viewportFit: "cover", // handles iPhone notch
   themeColor: "#121012",
 };
@@ -53,10 +52,12 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body className="bg-bg text-text flex min-h-full flex-col">
+        <Script
+          id="veil-theme"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: themeScript }}
+        />
         <Providers>
           {children}
           <InstallBanner />

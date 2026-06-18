@@ -3,8 +3,35 @@
 import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { Hooks } from "wagmi/tempo";
-import { parseUnits } from "viem";
+import { parseUnits, BaseError, UserRejectedRequestError } from "viem";
 import { ALPHA_USD, STABLECOIN_DECIMALS } from "@/lib/constants";
+
+/**
+ * Turn a transfer/unlock failure into one short, human line. The raw viem
+ * revert (a multi-paragraph dump with calldata + sender) is kept in the console
+ * for debugging but must never reach the UI, where it bled across the post.
+ */
+function friendlyUnlockError(err: unknown): string {
+  console.error("[unlock] failed:", err);
+
+  if (err instanceof BaseError) {
+    // User dismissed the passkey / wallet prompt.
+    if (err.walk((e) => e instanceof UserRejectedRequestError)) {
+      return "Unlock cancelled.";
+    }
+    // On-chain revert — on testnet this is almost always an empty AlphaUSD
+    // balance. The token reverts with no reason string, so we can't be more
+    // specific without a pre-flight balance read.
+    if (/revert/i.test(err.shortMessage) || /revert/i.test(err.message)) {
+      return "Payment failed — check your balance and try again.";
+    }
+    return err.shortMessage || "Couldn't complete the unlock. Please try again.";
+  }
+
+  // Errors we throw ourselves (e.g. from /api/unlock) are already short.
+  if (err instanceof Error) return err.message;
+  return "Couldn't complete the unlock. Please try again.";
+}
 
 const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET as
   | `0x${string}`
@@ -84,7 +111,7 @@ export function useUnlock(
       opts?.onUnlock?.(signedUrl, settlementMs);
     } catch (err) {
       setState("error");
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(friendlyUnlockError(err));
     }
   }, [account.address, postId, price, transfer, opts]);
 

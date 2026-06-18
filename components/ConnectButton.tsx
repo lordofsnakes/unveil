@@ -70,14 +70,16 @@ export function ConnectButton() {
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={() => setIsOpen((open) => !open)}
+        aria-expanded={isOpen}
         className="bg-primary text-primary-fg rounded-pill px-5 py-2.5 text-sm font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.97]"
       >
         {account ? formatMoney(account.availableBalance) : "Balance"}
       </button>
 
       {isOpen && (
-        <div className="border-hairline bg-surface-1 absolute right-0 top-12 z-50 w-64 rounded-[22px] p-4 shadow-2xl">
+        <div className="border-hairline bg-surface absolute right-0 top-12 z-50 w-64 rounded-[22px] border p-4 shadow-2xl">
           <div>
             <p className="text-faint text-xs uppercase tracking-wide">
               Available
@@ -89,6 +91,7 @@ export function ConnectButton() {
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button
+              type="button"
               onClick={() => startDeposit("10")}
               disabled={isPending}
               className="bg-surface-2 text-text flex items-center justify-center gap-1.5 rounded-[14px] px-3 py-2 text-sm font-semibold disabled:opacity-50"
@@ -97,6 +100,7 @@ export function ConnectButton() {
               $10
             </button>
             <button
+              type="button"
               onClick={() => startDeposit("25")}
               disabled={isPending}
               className="bg-surface-2 text-text flex items-center justify-center gap-1.5 rounded-[14px] px-3 py-2 text-sm font-semibold disabled:opacity-50"
@@ -105,6 +109,7 @@ export function ConnectButton() {
               $25
             </button>
             <button
+              type="button"
               onClick={() => startDeposit("50")}
               disabled={isPending}
               className="bg-surface-2 text-text col-span-2 flex items-center justify-center gap-1.5 rounded-[14px] px-3 py-2 text-sm font-semibold disabled:opacity-50"

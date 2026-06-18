@@ -83,6 +83,7 @@ export function FlexCard({
       </div>
 
       <button
+        type="button"
         onClick={onShare}
         className="bg-primary text-primary-fg relative mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-pill text-[15px] font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.98]"
         style={{ boxShadow: "0 8px 26px var(--primary-glow)" }}

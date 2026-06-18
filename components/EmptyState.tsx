@@ -14,6 +14,7 @@ export function EmptyState({
       <div
         className="text-primary flex size-16 items-center justify-center rounded-full"
         style={{ background: "var(--primary-tint)" }}
+        aria-hidden
       >
         {Icon ? <Icon size={28} /> : <span className="text-2xl font-bold">V</span>}
       </div>

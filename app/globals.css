@@ -6,6 +6,8 @@
    ============================================================ */
 
 :root {
+  color-scheme: dark;
+
   /* Canvas & surfaces */
   --bg: #121012;
   --surface: #1a171a;
@@ -58,6 +60,8 @@
 }
 
 .light {
+  color-scheme: light;
+
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-2: #fafaf9;
@@ -213,6 +217,7 @@
    ============================================================ */
 html {
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 body {
@@ -220,6 +225,23 @@ body {
   color: var(--text);
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+button,
+a,
+input,
+textarea {
+  touch-action: manipulation;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
 }
 
 /* Mono numerals — tabular so prices/settle-ms/balances line up. */
@@ -252,6 +274,15 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+
   .motion-reveal,
   .motion-shimmer {
     animation: none !important;

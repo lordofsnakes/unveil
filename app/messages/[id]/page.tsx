@@ -112,7 +112,7 @@ export default function DmPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       {/* Header */}
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-md items-center gap-3 px-4 py-3">
@@ -141,6 +141,7 @@ export default function DmPage() {
             </div>
           </div>
           <button
+            type="button"
             className="text-muted flex size-[38px] items-center justify-center"
             aria-label="More"
           >
@@ -159,7 +160,7 @@ export default function DmPage() {
           <p className="text-faint mt-16 text-center text-sm">Loading…</p>
         ) : messages.length === 0 ? (
           <p className="text-faint mt-16 text-center text-sm">
-            No messages yet. Say hello 👋
+            No messages yet. Say hello.
           </p>
         ) : (
           messages.map((m) =>
@@ -195,6 +196,7 @@ export default function DmPage() {
         >
           {thread?.viewerIsCreator && (
             <button
+              type="button"
               onClick={() => setAttachOpen(true)}
               className="text-muted flex size-[38px] shrink-0 items-center justify-center"
               aria-label="Attach locked content"
@@ -203,14 +205,17 @@ export default function DmPage() {
             </button>
           )}
           <input
+            name="message"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendText()}
             placeholder="Send a message…"
+            autoComplete="off"
             disabled={!wallet}
             className="bg-surface-2 border-hairline text-text placeholder:text-faint h-[42px] flex-1 rounded-pill border px-4 text-[14px] outline-none"
           />
           <button
+            type="button"
             onClick={sendText}
             disabled={!text.trim() || sending}
             className="bg-primary text-primary-fg flex size-[42px] shrink-0 items-center justify-center rounded-full disabled:opacity-50"
@@ -298,6 +303,7 @@ function PpvCard({ msg }: { msg: PpvMsg }) {
                   </span>
                 ) : (
                   <button
+                    type="button"
                     onClick={unlock}
                     disabled={state === "pending" || !connected}
                     className="bg-primary text-primary-fg flex h-[42px] items-center gap-1.5 rounded-pill px-[18px] text-[13.5px] font-semibold disabled:opacity-60"
@@ -349,19 +355,47 @@ function AttachSheet({
       .catch(() => setPosts([]));
   }, [wallet]);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="attach-sheet-title"
+      className="fixed inset-0 z-50 flex items-end justify-center"
     >
+      <button
+        type="button"
+        aria-label="Close attachment picker"
+        className="absolute inset-0 cursor-default bg-black/50"
+        onClick={onClose}
+      />
       <div
-        className="bg-surface border-hairline w-full max-w-md rounded-t-card border-t p-4"
+        className="bg-surface border-hairline relative max-h-[88dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-card border-t p-4"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-[15px] font-semibold">Send locked content</span>
-          <button onClick={onClose} aria-label="Close" className="text-muted">
+          <span id="attach-sheet-title" className="text-[15px] font-semibold">
+            Send locked content
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted"
+          >
             <X size={20} />
           </button>
         </div>
@@ -375,6 +409,7 @@ function AttachSheet({
           <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto">
             {posts.map((p) => (
               <button
+                type="button"
                 key={p.id}
                 onClick={() => onPick(p.id)}
                 className="relative overflow-hidden rounded-md"

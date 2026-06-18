@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
     "@ffprobe-installer/ffprobe",
     "fluent-ffmpeg",
     "replicate",
+    // Server-only data/storage clients — node-postgres ("pg") is node-only and
+    // must never enter the client/browser graph; keeping both external stops
+    // Turbopack from intermittently failing to resolve them into the page build.
+    "pg",
+    "@supabase/supabase-js",
   ],
   // sharp (libvips) and the ffmpeg/ffprobe installers load their native binaries
   // via dynamic requires the file tracer can't follow — force them into the

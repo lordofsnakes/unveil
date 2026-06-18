@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 async function loadFeed(): Promise<FeedPost[] | null> {
   try {
     const rows = await getFeed(20, 0);
-    return Promise.all(
+    return await Promise.all(
       rows.map(async (p) => ({
         id: p.id,
         title: p.title,
@@ -38,7 +38,7 @@ export default async function FeedPage() {
   const posts = await loadFeed();
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       <TopBar />
 
       <div className="mx-auto w-full max-w-md flex-1 px-3.5 pt-3.5 pb-28">

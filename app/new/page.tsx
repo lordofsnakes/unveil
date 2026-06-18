@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ArrowLeft, ImagePlus, X, Check, ShieldCheck } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
@@ -11,7 +10,6 @@ type Status = "idle" | "submitting" | "done";
 
 export default function NewPostPage() {
   const account = useAccount();
-  const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -69,7 +67,7 @@ export default function NewPostPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-[18px] py-3.5">
           <div className="flex items-center gap-3.5">
@@ -83,6 +81,7 @@ export default function NewPostPage() {
             <span className="text-xl font-bold">New post</span>
           </div>
           <button
+            type="button"
             onClick={publish}
             disabled={!canPublish}
             className="bg-primary text-primary-fg flex items-center gap-1.5 rounded-pill px-5 py-2 text-sm font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.97] disabled:opacity-50"
@@ -106,7 +105,7 @@ export default function NewPostPage() {
 
       <div className="mx-auto w-full max-w-md flex-1 px-[18px] pt-[18px] pb-28">
         {status === "done" ? (
-          <Done jobId={jobId} onAnother={() => resetTo("idle")} router={router} />
+          <Done jobId={jobId} onAnother={() => resetTo("idle")} />
         ) : (
           <>
             {!connected && (
@@ -122,6 +121,8 @@ export default function NewPostPage() {
                 style={{ background: "conic-gradient(from 120deg,#3a3640,#1c1a22)" }}
               />
               <textarea
+                aria-label="Post caption"
+                name="caption"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Write something worth unveiling…"
@@ -160,6 +161,7 @@ export default function NewPostPage() {
                   <img src={previewUrl} alt="" className="size-full object-cover" />
                 )}
                 <button
+                  type="button"
                   onClick={() => setFile(null)}
                   className="absolute top-3 right-3 flex size-9 items-center justify-center rounded-full text-white"
                   style={{ background: "rgba(8,6,8,.6)" }}
@@ -177,6 +179,7 @@ export default function NewPostPage() {
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => fileInput.current?.click()}
                 className="border-hairline-strong text-faint mt-[22px] flex w-full flex-col items-center justify-center gap-3 rounded-md border border-dashed transition-transform active:scale-[0.99]"
                 style={{ aspectRatio: "4 / 5" }}
@@ -200,6 +203,7 @@ export default function NewPostPage() {
               >
                 <span>$</span>
                 <input
+                  name="price"
                   type="number"
                   min="0"
                   step="0.01"
@@ -241,11 +245,9 @@ export default function NewPostPage() {
 function Done({
   jobId,
   onAnother,
-  router,
 }: {
   jobId: string | null;
   onAnother: () => void;
-  router: ReturnType<typeof useRouter>;
 }) {
   return (
     <div className="mt-16 flex flex-col items-center gap-5 text-center">
@@ -271,13 +273,14 @@ function Done({
             <ShieldCheck size={18} /> Review &amp; approve
           </Link>
         )}
-        <button
-          onClick={() => router.push("/")}
-          className={`${jobId ? "bg-surface-2 text-text border-hairline border" : "bg-primary text-primary-fg"} h-12 rounded-pill font-semibold transition-transform active:scale-[0.98]`}
+        <Link
+          href="/"
+          className={`${jobId ? "bg-surface-2 text-text border-hairline border" : "bg-primary text-primary-fg"} flex h-12 items-center justify-center rounded-pill font-semibold transition-transform active:scale-[0.98]`}
         >
           Back to feed
-        </button>
+        </Link>
         <button
+          type="button"
           onClick={onAnother}
           className="text-muted h-11 rounded-pill font-semibold transition-transform active:scale-[0.98]"
         >

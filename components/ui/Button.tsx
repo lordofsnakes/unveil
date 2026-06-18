@@ -32,6 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
+        type={props.type ?? "button"}
         disabled={disabled || loading}
         className={`${base} ${variants[variant]} ${className}`}
         {...props}

@@ -32,6 +32,7 @@ export function InstallBanner() {
       <div className="flex items-center justify-between gap-3">
         <p className="text-text font-semibold">Install Veil</p>
         <button
+          type="button"
           onClick={() => setDismissed(true)}
           className="text-faint hover:text-text"
           aria-label="Dismiss"
@@ -43,6 +44,7 @@ export function InstallBanner() {
         Add to your home screen for the full app.
       </p>
       <button
+        type="button"
         onClick={async () => {
           await prompt.prompt();
           setPrompt(null);

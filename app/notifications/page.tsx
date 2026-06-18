@@ -38,7 +38,7 @@ export default function NotificationsPage() {
   }, [account.address]);
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto w-full max-w-md px-[18px] py-3.5">
           <span className="text-xl font-bold">Notifications</span>

@@ -43,7 +43,7 @@ export default function MessagesPage() {
     filter === "unread" ? (threads ?? []).filter((t) => t.unread > 0) : threads ?? [];
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto w-full max-w-md px-[18px] py-3.5">
           <span className="text-xl font-bold">Messages</span>
@@ -66,6 +66,7 @@ export default function MessagesPage() {
           <>
             <div className="flex items-center gap-2.5 px-[18px] pt-3.5 pb-2.5">
               <button
+                type="button"
                 onClick={() => setFilter("all")}
                 className="rounded-pill px-4 py-1.5 text-[13px] font-semibold"
                 style={
@@ -81,6 +82,7 @@ export default function MessagesPage() {
                 All
               </button>
               <button
+                type="button"
                 onClick={() => setFilter("unread")}
                 className="bg-surface-2 text-muted flex items-center gap-1.5 rounded-pill px-4 py-1.5 text-[13px] font-medium"
                 style={

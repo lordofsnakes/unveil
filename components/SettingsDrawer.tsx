@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import Link from "next/link";
 import { useDisconnect, useAccount } from "wagmi";
 import {
   X,
@@ -27,6 +29,22 @@ export function SettingsDrawer({
   const { disconnect } = useDisconnect();
   const account = useAccount();
 
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, open]);
+
   if (!open) return null;
 
   const isLight = theme === "light";
@@ -36,20 +54,32 @@ export function SettingsDrawer({
 
   return (
     <>
-      <div
+      <button
+        type="button"
+        aria-label="Close settings"
         onClick={onClose}
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-40 cursor-default"
         style={{ background: "rgba(4,3,5,.55)", animation: "vscrim .2s ease both" }}
       />
       <aside
-        className="bg-surface fixed inset-y-0 right-0 z-50 flex w-[328px] max-w-[85vw] flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        className="bg-surface fixed inset-y-0 right-0 z-50 flex w-[328px] max-w-[85vw] flex-col overscroll-contain"
         style={{
           animation: "vdrawer .24s cubic-bezier(.22,1,.36,1) both",
           boxShadow: "-20px 0 60px rgba(0,0,0,.5)",
         }}
       >
         {/* Header */}
-        <div className="border-hairline pt-safe border-b px-5 pt-6 pb-[18px]">
+        <div
+          className="border-hairline border-b px-5 pb-[18px]"
+          // `pt-safe` (a custom utility) was clobbering Tailwind's `pt-6`, collapsing
+          // the intended 24px top padding to the bare safe-area inset (0 in a browser),
+          // which jammed the avatar against the top edge. Keep the design's 24px while
+          // still clearing the notch on devices whose inset exceeds it.
+          style={{ paddingTop: "max(24px, calc(env(safe-area-inset-top, 0px) + 12px))" }}
+        >
           <div className="flex items-start justify-between">
             <div className="relative size-[52px]">
               <div
@@ -62,6 +92,7 @@ export function SettingsDrawer({
               />
             </div>
             <button
+              type="button"
               onClick={onClose}
               className="text-muted hover:text-text flex size-[34px] items-center justify-center"
               aria-label="Close"
@@ -86,6 +117,7 @@ export function SettingsDrawer({
 
           {/* Theme toggle */}
           <button
+            type="button"
             onClick={toggle}
             className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left"
           >
@@ -104,13 +136,17 @@ export function SettingsDrawer({
             </span>
           </button>
 
-          <button className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left">
+          <button
+            type="button"
+            className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left"
+          >
             <Globe size={21} strokeWidth={1.8} className="text-muted" />
             <span className="flex-1 text-[15px] font-medium">English</span>
             <ChevronDown size={18} className="text-faint" />
           </button>
           <Divider />
           <button
+            type="button"
             onClick={() => {
               disconnect();
               onClose();
@@ -154,17 +190,20 @@ function Row({
   );
   if (href) {
     return (
-      <a
+      <Link
         href={href}
         onClick={onNavigate}
         className="flex items-center gap-3.5 px-[22px] py-3.5"
       >
         {inner}
-      </a>
+      </Link>
     );
   }
   return (
-    <button className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left">
+    <button
+      type="button"
+      className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left"
+    >
       {inner}
     </button>
   );

@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Home, Bell, Plus, MessageCircle } from "lucide-react";
+import { SettingsDrawer } from "./SettingsDrawer";
 
 export function BottomNav() {
   const pathname = usePathname();
   const account = useAccount();
   const [unread, setUnread] = useState(0);
+  const [drawer, setDrawer] = useState(false);
 
   // Real unread-message badge. Refetched on navigation (cheap) so opening a
   // thread — which marks it read — clears the badge when you come back.
@@ -50,42 +52,52 @@ export function BottomNav() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
-    <nav
-      className="bg-surface/95 border-hairline fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-xl"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)" }}
-    >
-      <div className="mx-auto flex w-full max-w-md items-center justify-around px-4 pt-2">
-        <NavTab {...TABS[0]} active={isActive(TABS[0].href)} />
-        <NavTab {...TABS[1]} active={isActive(TABS[1].href)} />
+    <>
+      <nav
+        className="bg-surface/95 border-hairline fixed inset-x-0 bottom-0 z-30 border-t backdrop-blur-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)" }}
+      >
+        <div className="mx-auto flex w-full max-w-md items-center justify-around px-4 pt-2">
+          <NavTab {...TABS[0]} active={isActive(TABS[0].href)} />
+          <NavTab {...TABS[1]} active={isActive(TABS[1].href)} />
 
-        {/* Center: New post */}
-        <Link
-          href="/new"
-          aria-label="New post"
-          className="bg-primary text-primary-fg flex h-[42px] w-[50px] items-center justify-center rounded-[14px]"
-          style={{ boxShadow: "0 6px 20px var(--primary-glow)" }}
-        >
-          <Plus size={24} strokeWidth={2.3} />
-        </Link>
+          {/* Center: New post */}
+          <Link
+            href="/new"
+            aria-label="New post"
+            className="bg-primary text-primary-fg flex h-[42px] w-[50px] items-center justify-center rounded-[14px]"
+            style={{ boxShadow: "0 6px 20px var(--primary-glow)" }}
+          >
+            <Plus size={24} strokeWidth={2.3} />
+          </Link>
 
-        <NavTab {...TABS[2]} active={isActive(TABS[2].href)} />
+          <NavTab {...TABS[2]} active={isActive(TABS[2].href)} />
 
-        {/* Profile */}
-        <Link
-          href="/profile"
-          aria-label="Profile"
-          className="flex size-12 items-center justify-center"
-        >
-          <span
-            className="size-[30px] rounded-full"
-            style={{
-              background: "conic-gradient(from 120deg,#3a3640,#1c1a22)",
-              boxShadow: `0 0 0 2px ${isActive("/profile") ? "var(--primary)" : "transparent"}`,
-            }}
-          />
-        </Link>
-      </div>
-    </nav>
+          {/* Profile - opens the settings drawer instead of navigating. */}
+          <button
+            type="button"
+            onClick={() => setDrawer(true)}
+            aria-label="Profile"
+            className="flex size-12 items-center justify-center"
+          >
+            <span
+              className="size-[30px] rounded-full"
+              style={{
+                background: "conic-gradient(from 120deg,#3a3640,#1c1a22)",
+                boxShadow: `0 0 0 2px ${
+                  drawer || isActive("/profile") ? "var(--primary)" : "transparent"
+                }`,
+              }}
+            />
+          </button>
+        </div>
+      </nav>
+
+      {/* Rendered as a sibling of <nav> so the drawer's z-50 isn't trapped
+          inside the nav's z-30 stacking context (it would otherwise paint
+          beneath page headers like the feed's sticky z-40 bar). */}
+      <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
+    </>
   );
 }
 

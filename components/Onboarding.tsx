@@ -60,21 +60,27 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
         <div className="text-text mb-[13px] text-sm font-semibold">Log in</div>
 
         <input
+          aria-label="Email"
+          name="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
           type="email"
           autoComplete="email"
+          spellCheck={false}
           className="bg-surface-2 text-text placeholder:text-faint mb-3.5 h-[54px] w-full rounded-[14px] px-[18px] text-base outline-none focus:border-[color:var(--primary)]"
           style={{ border: "1px solid var(--hairline-2)" }}
         />
 
         <div className="relative mb-[18px]">
           <input
+            aria-label="Password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
             type={showPw ? "text" : "password"}
+            autoComplete="current-password"
             className="bg-surface-2 text-text placeholder:text-faint h-[54px] w-full rounded-[14px] pl-[18px] pr-[52px] text-base outline-none focus:border-[color:var(--primary)]"
             style={{ border: "1px solid var(--hairline-2)" }}
           />
@@ -90,6 +96,7 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
 
         {/* Primary form action — demo enters the feed once both fields are filled */}
         <button
+          type="button"
           onClick={onSkip}
           disabled={!canLogin}
           className="h-[54px] w-full rounded-pill text-[15px] font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
@@ -113,15 +120,20 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
           className="text-primary flex items-center justify-center gap-3 text-sm font-semibold"
           style={{ margin: "26px 0 22px" }}
         >
-          <span className="cursor-pointer">Forgot password?</span>
+          <button type="button" className="hover:text-primary-hover">
+            Forgot password?
+          </button>
           <span className="text-faint">·</span>
-          <span className="cursor-pointer">Sign up for Veil</span>
+          <button type="button" className="hover:text-primary-hover">
+            Sign up for Veil
+          </button>
         </div>
 
         {/* Social / passkey */}
         <div className="flex flex-col gap-[13px]">
           {/* Passkey — solid red, the REAL Tempo connect */}
           <button
+            type="button"
             onClick={() => connect({ connector })}
             disabled={isPending}
             className="text-primary-fg relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985] disabled:opacity-60"
@@ -133,6 +145,7 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
 
           {/* X — red stroke outline */}
           <button
+            type="button"
             onClick={onSkip}
             className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
             style={{ border: "1px solid var(--primary)", background: "transparent" }}
@@ -152,6 +165,7 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
 
           {/* Google — red stroke outline, multicolor G */}
           <button
+            type="button"
             onClick={onSkip}
             className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
             style={{ border: "1px solid var(--primary)", background: "transparent" }}

@@ -86,6 +86,7 @@ export function PostCard({
           <p className="text-faint text-[12.5px] leading-snug">@{username}</p>
         </div>
         <button
+          type="button"
           className="text-faint hover:text-muted flex size-9 items-center justify-center"
           aria-label="More"
         >
@@ -140,27 +141,37 @@ export function PostCard({
             />
           </motion.div>
         )}
-        <div className="text-muted flex items-center gap-5">
-          <button className="flex items-center gap-1.5 text-[13.5px]" aria-label="Like">
+        <div className="text-muted flex items-center gap-2">
+          <button
+            type="button"
+            className="flex size-10 items-center justify-center gap-1.5 text-[13.5px] hover:text-text"
+            aria-label="Like"
+          >
             <Heart size={22} strokeWidth={1.9} />
           </button>
           <button
+            type="button"
             onClick={messageCreator}
             disabled={messaging || !account.address || !post.creator.wallet}
             aria-label="Message creator"
-            className="disabled:opacity-50"
+            className="flex size-10 items-center justify-center hover:text-text disabled:opacity-50"
           >
             <MessageCircle size={22} strokeWidth={1.9} />
           </button>
           <button
-            className="flex items-center gap-1.5 text-[13px] font-semibold"
+            type="button"
+            className="flex h-10 items-center gap-1.5 rounded-pill px-1 text-[13px] font-semibold hover:text-text"
             aria-label="Tip"
           >
             <CircleDollarSign size={22} strokeWidth={1.9} />
             <span>Tip</span>
           </button>
           <div className="flex-1" />
-          <button aria-label="Save">
+          <button
+            type="button"
+            aria-label="Save"
+            className="flex size-10 items-center justify-center hover:text-text"
+          >
             <Bookmark size={21} strokeWidth={1.9} />
           </button>
         </div>

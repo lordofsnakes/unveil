@@ -67,12 +67,13 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
+    <main className="flex min-h-dvh flex-1 flex-col">
       {/* Header bar */}
       <header className="bg-surface/80 border-hairline pt-safe sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-md items-center justify-between px-[18px] py-3.5">
           <span className="text-xl font-bold">Profile</span>
           <button
+            type="button"
             onClick={() => setDrawer(true)}
             className="text-muted hover:text-text flex size-[38px] items-center justify-center"
             aria-label="Menu"
@@ -221,6 +222,20 @@ function EditProfileSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -245,28 +260,47 @@ function EditProfileSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
-      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-profile-title"
+      className="fixed inset-0 z-50 flex items-end justify-center"
     >
+      <button
+        type="button"
+        aria-label="Close edit profile"
+        className="absolute inset-0 cursor-default bg-black/50"
+        onClick={onClose}
+      />
       <div
-        className="bg-surface border-hairline w-full max-w-md rounded-t-card border-t p-5"
+        className="bg-surface border-hairline relative max-h-[88dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-card border-t p-5"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 22px)" }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <span className="text-[16px] font-semibold">Edit profile</span>
-          <button onClick={onClose} aria-label="Close" className="text-muted">
+          <span id="edit-profile-title" className="text-[16px] font-semibold">
+            Edit profile
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted"
+          >
             <X size={20} />
           </button>
         </div>
-        <label className="text-faint text-[12.5px]">Username</label>
+        <label htmlFor="profile-username" className="text-faint text-[12.5px]">
+          Username
+        </label>
         <div className="bg-surface-2 border-hairline mt-1.5 flex items-center rounded-md border px-3">
           <span className="text-faint">@</span>
           <input
+            id="profile-username"
+            name="username"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="yourname"
-            autoFocus
+            placeholder="yourname…"
+            autoComplete="off"
+            spellCheck={false}
             className="text-text placeholder:text-faint h-[46px] flex-1 bg-transparent px-1 outline-none"
           />
         </div>

@@ -11,8 +11,10 @@ export function TopBar({ children }: { children?: React.ReactNode }) {
         <div className="flex items-center gap-1">
           {children}
           <button
-            className="text-muted hover:text-text flex size-[42px] items-center justify-center"
-            aria-label="Search"
+            type="button"
+            disabled
+            className="text-muted flex size-[42px] items-center justify-center opacity-45"
+            aria-label="Search unavailable"
           >
             <Search size={22} />
           </button>
