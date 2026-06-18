@@ -39,10 +39,9 @@ export function ReviewPanel({
         action === "approve"
           ? `/api/blur/jobs/${jobId}/approve`
           : `/api/blur/jobs/${jobId}/reject`;
+      // Approve with no overrides → publishJob uses the draft title/price set at upload.
       const body =
-        action === "approve"
-          ? { title: "Review approved", unlockPrice: "0.05" }
-          : { mode: action === "manual" ? "manual" : "adjust" };
+        action === "approve" ? {} : { mode: action === "manual" ? "manual" : "adjust" };
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

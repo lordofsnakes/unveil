@@ -154,6 +154,11 @@ export const blurJobs = pgTable(
     blurredBlobUrl: text("blurred_blob_url"), // public — set on success
     originalBlobKey: text("original_blob_key"), // private — set on success
 
+    // Draft post metadata captured at upload; publishJob() uses these at approve
+    // (the approve request may still override them). See app/api/posts/route.ts.
+    draftTitle: text("draft_title"),
+    draftPrice: decimal("draft_price", { precision: 18, scale: 8 }),
+
     // One Replicate prediction id per stage, e.g. { detect, track, composite }.
     predictionIds: jsonb("prediction_ids")
       .$type<Record<string, string>>()

@@ -31,37 +31,6 @@ export async function upsertCreator(walletAddress: string) {
   return user;
 }
 
-/**
- * Create a post. Defaults to UNPUBLISHED — the auto-blur pipeline publishes it
- * (and overwrites `blurredPreviewUrl` with the real blurred derivative) only
- * after the creator approves the blur. Fail-closed: nothing is public until the
- * blur is reviewed (auto-blur PRD §11).
- */
-export async function createPost(input: {
-  creatorId: string;
-  title: string;
-  unlockPrice: string;
-  mediaType: "image" | "video";
-  blurredPreviewUrl: string;
-  privateMediaKey: string;
-  isPublished?: boolean;
-}) {
-  const db = getDb();
-  const [post] = await db
-    .insert(posts)
-    .values({
-      creatorId: input.creatorId,
-      title: input.title,
-      unlockPrice: input.unlockPrice,
-      mediaType: input.mediaType,
-      blurredPreviewUrl: input.blurredPreviewUrl,
-      privateMediaKey: input.privateMediaKey,
-      isPublished: input.isPublished ?? false,
-    })
-    .returning();
-  return post;
-}
-
 export async function getFeed(limit = 20, offset = 0) {
   const db = getDb();
   return db.query.posts.findMany({

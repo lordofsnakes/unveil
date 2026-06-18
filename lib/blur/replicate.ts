@@ -37,6 +37,11 @@ export const MODELS = {
   samurai: {
     ref: `zsxkib/samurai:${process.env.REPLICATE_SAMURAI_VERSION}` as const,
   },
+  // Strategy B (P5) — our single Cog: detect+track+composite in one call.
+  // Only used when REPLICATE_VEIL_AUTOBLUR_VERSION is set (i.e. the Cog is pushed).
+  veilAutoblur: {
+    ref: `${process.env.REPLICATE_VEIL_AUTOBLUR_OWNER ?? "veil"}/veil-autoblur:${process.env.REPLICATE_VEIL_AUTOBLUR_VERSION}` as const,
+  },
 } as const;
 
 // Region prompt taxonomy — TUNE empirically (PRD open question #1).

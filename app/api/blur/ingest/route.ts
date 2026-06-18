@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createJob } from "@/lib/blur/jobs";
-import { detectStage } from "@/lib/blur/state";
+import { startPipeline } from "@/lib/blur/state";
 import { presignPrivateGet } from "@/lib/blob";
 
 // neon + @vercel/blob signing + (video) ffmpeg keyframe extraction need Node.
@@ -26,8 +26,9 @@ export async function POST(req: NextRequest) {
   // 2. Signed URL Replicate can fetch — TTL must outlive the whole pipeline.
   const signedRawUrl = await presignPrivateGet(rawBlobKey, 60 * 30);
 
-  // 3. Kick off detection with a webhook; do NOT await completion.
-  await detectStage(job.id, signedRawUrl, mediaType);
+  // 3. Kick off the pipeline with a webhook; do NOT await completion.
+  //    Routes to the single Cog (P5) when configured, else the multi-stage chain.
+  await startPipeline(job.id, signedRawUrl, mediaType);
 
   // 4. Return now. Replicate calls /api/blur/webhook as each stage finishes.
   return Response.json({ jobId: job.id, status: "detecting" });

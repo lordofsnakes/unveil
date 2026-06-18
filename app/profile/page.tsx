@@ -114,6 +114,12 @@ export default function ProfilePage() {
               <FlexCard
                 handle={handle}
                 balance={fmtPoints(loyalty?.points ?? "0")}
+                onShare={() =>
+                  window.open(
+                    `/api/og/flex-card?wallet=${account.address}`,
+                    "_blank",
+                  )
+                }
               />
               {loyalty?.onchain && (
                 <div className="text-faint mt-2 flex items-center justify-center gap-1.5 text-[12px]">

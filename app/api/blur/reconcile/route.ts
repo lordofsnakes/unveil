@@ -34,7 +34,13 @@ export async function GET(req: NextRequest) {
   for (const job of stuck) {
     const preds = job.predictionIds ?? {};
     // Poll the most recent stage that has a Replicate prediction.
-    const stage = preds.track ? "track" : preds.detect ? "detect" : null;
+    const stage = preds.cog
+      ? "cog"
+      : preds.track
+        ? "track"
+        : preds.detect
+          ? "detect"
+          : null;
     const predId = stage ? preds[stage] : undefined;
     if (!stage || !predId) {
       results.push({ job: job.id, skipped: "no_prediction" });

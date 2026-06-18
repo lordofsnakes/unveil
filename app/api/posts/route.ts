@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { put } from "@vercel/blob";
-import { upsertCreator, createPost } from "@/lib/db/queries";
-import { createJob } from "@/lib/blur/jobs";
+import { upsertCreator } from "@/lib/db/queries";
+import { createJob, updateJob } from "@/lib/blur/jobs";
 
 export const runtime = "nodejs";
 
@@ -11,15 +11,16 @@ export const runtime = "nodejs";
 const MAX_BYTES = 25 * 1024 * 1024;
 
 /**
- * Creator upload / post-creation. The UPLOAD side of the auto-blur flow:
+ * Creator upload. The UPLOAD side of the auto-blur flow (Option A):
  *   1. store the raw media as a PRIVATE blob (this is what the blur pipeline reads)
- *   2. create an UNPUBLISHED post (fail-closed — not public until blur is reviewed)
- *   3. enqueue a `blur_jobs` row (status "uploaded") linked to the post
- *   4. best-effort kick off detection IF Replicate is configured (never blocks)
+ *   2. enqueue a `blur_jobs` row (status "uploaded") carrying the draft caption +
+ *      price — the POST itself is created later, at approve, by publishJob()
+ *   3. best-effort kick off detection IF Replicate is configured (never blocks)
  *
- * The actual detection/compositing/publish (the "blur flow") is owned elsewhere;
- * this route just hands off a clean `uploaded` job + raw blob in the shape the
- * pipeline expects (`lib/blur/jobs.ts` + `lib/blur/state.ts`).
+ * No post is created here: nothing is public until the creator approves the blur
+ * (auto-blur PRD §11, fail-closed). The detection/compositing/publish ("blur
+ * flow") is a separate workstream; this route just hands off a clean `uploaded`
+ * job + raw blob + draft metadata in the shape `lib/blur` expects.
  *
  *   POST /api/posts  (multipart/form-data: file, title, price, wallet)
  */
@@ -81,50 +82,39 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Unpublished post + 3. blur job (the handoff). Preview is the raw key as a
-  //    placeholder; the blur publish step overwrites it with the real derivative.
-  //    Safe because unpublished posts never reach the feed (getFeed filters them).
-  const post = await createPost({
-    creatorId: creator.id,
-    title,
-    unlockPrice: priceNum.toFixed(8),
-    mediaType,
-    blurredPreviewUrl: rawBlobKey,
-    privateMediaKey: rawBlobKey,
-    isPublished: false,
+  // 2. Blur job (the handoff) carrying the draft caption + price. publishJob()
+  //    creates the public post from these at approve time.
+  const job = await createJob({ creatorId: creator.id, mediaType, rawBlobKey });
+  await updateJob(job.id, {
+    draftTitle: title,
+    draftPrice: priceNum.toFixed(8),
   });
 
-  const job = await createJob({
-    creatorId: creator.id,
-    mediaType,
-    rawBlobKey,
-    postId: post.id,
-  });
-
-  // 4. Optional handoff trigger — only if the blur pipeline is configured. Never
-  //    let a detection failure (or missing Replicate creds) fail the upload.
+  // 4. Optional handoff trigger via the blur pipeline's canonical entry point
+  //    (`startPipeline` routes to the single Cog or the multi-stage chain). Only
+  //    if Replicate is configured; never let a failure fail the upload.
   const blurConfigured =
     !!process.env.REPLICATE_API_TOKEN &&
-    (mediaType === "image"
-      ? !!process.env.REPLICATE_GROUNDED_SAM_VERSION
-      : !!process.env.REPLICATE_GROUNDING_DINO_VERSION);
+    (!!process.env.REPLICATE_VEIL_AUTOBLUR_VERSION ||
+      (mediaType === "image"
+        ? !!process.env.REPLICATE_GROUNDED_SAM_VERSION
+        : !!process.env.REPLICATE_GROUNDING_DINO_VERSION));
 
   if (blurConfigured) {
     try {
-      const [{ detectStage }, { presignPrivateGet }] = await Promise.all([
+      const [{ startPipeline }, { presignPrivateGet }] = await Promise.all([
         import("@/lib/blur/state"),
         import("@/lib/blob"),
       ]);
       const rawUrl = await presignPrivateGet(rawBlobKey, 60 * 30);
-      await detectStage(job.id, rawUrl, mediaType);
+      await startPipeline(job.id, rawUrl, mediaType);
     } catch (err) {
       // Leave the job in "uploaded" for the pipeline to pick up later.
-      console.error("blur detect trigger failed (non-fatal):", err);
+      console.error("blur pipeline trigger failed (non-fatal):", err);
     }
   }
 
   return Response.json({
-    postId: post.id,
     jobId: job.id,
     status: blurConfigured ? "processing" : "uploaded",
   });

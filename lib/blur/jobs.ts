@@ -72,7 +72,7 @@ export async function addPredictionId(id: string, stage: string, predictionId: s
  */
 export async function publishJob(
   jobId: string,
-  opts: { title: string; unlockPrice: string },
+  opts: { title?: string; unlockPrice?: string } = {},
 ) {
   const { Pool } = await import("@neondatabase/serverless");
   const { drizzle } = await import("drizzle-orm/neon-serverless");
@@ -88,14 +88,18 @@ export async function publishJob(
       }
       if (!job.blurredBlobUrl) throw new Error("job has no blurred derivative");
 
+      // Approve request overrides the draft captured at upload; fall back to it.
+      const title = opts.title?.trim() || job.draftTitle || "Untitled";
+      const unlockPrice = opts.unlockPrice || job.draftPrice || "0.05";
+
       const [post] = await tx
         .insert(posts)
         .values({
           creatorId: job.creatorId,
-          title: opts.title,
+          title,
           blurredPreviewUrl: job.blurredBlobUrl, // pathname — feed presigns it
           privateMediaKey: job.originalBlobKey ?? job.rawBlobKey,
-          unlockPrice: opts.unlockPrice,
+          unlockPrice,
           mediaType: job.mediaType,
           isPublished: true,
         })

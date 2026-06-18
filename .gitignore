@@ -51,3 +51,6 @@ test.mp4
 /auto-blur/*.webm
 /auto-blur/*.m4v
 /auto-blur/*.mkv
+# python bytecode (cog dev)
+__pycache__/
+*.pyc

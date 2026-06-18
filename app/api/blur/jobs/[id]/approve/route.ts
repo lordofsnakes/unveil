@@ -14,11 +14,13 @@ export async function POST(
     title?: string;
     unlockPrice?: string;
   };
-  const title = body.title?.trim() || "Untitled";
-  const unlockPrice = body.unlockPrice ?? "0.05";
 
   try {
-    const { post } = await publishJob(id, { title, unlockPrice });
+    // Omitted fields fall back to the draft captured at upload (publishJob).
+    const { post } = await publishJob(id, {
+      title: body.title,
+      unlockPrice: body.unlockPrice,
+    });
     return Response.json({ status: "published", postId: post.id });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 409 });

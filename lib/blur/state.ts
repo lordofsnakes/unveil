@@ -13,7 +13,7 @@ import type { DetectedRegion } from "@/lib/db/schema";
 
 // ── Webhook URL ───────────────────────────────────────────────────────────────
 // Replicate calls back here when a stage finishes. Must be a public URL.
-function webhookUrl(jobId: string, stage: "detect" | "track"): string {
+function webhookUrl(jobId: string, stage: "detect" | "track" | "cog"): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   return `${base}/api/blur/webhook?job=${jobId}&stage=${stage}`;
 }
@@ -21,7 +21,46 @@ function webhookUrl(jobId: string, stage: "detect" | "track"): string {
 const TTL = 60 * 30; // signed-URL lifetime — must outlive the whole pipeline
 
 // ════════════════════════════════════════════════════════════════════════════
-// Stage 1 — DETECT (kicked off by ingest). Starts a Replicate prediction with a
+// Entry point (called by ingest). Routes to the single Cog when it's configured
+// (P5, Strategy B), else the multi-stage chain (P2).
+// ════════════════════════════════════════════════════════════════════════════
+export function usingCog(): boolean {
+  return Boolean(process.env.REPLICATE_VEIL_AUTOBLUR_VERSION);
+}
+
+export async function startPipeline(
+  jobId: string,
+  rawUrl: string,
+  mediaType: "image" | "video",
+) {
+  return usingCog()
+    ? cogStage(jobId, rawUrl, mediaType)
+    : detectStage(jobId, rawUrl, mediaType);
+}
+
+// P5 — one prediction does detect+track+composite on the GPU box.
+async function cogStage(jobId: string, rawUrl: string, mediaType: "image" | "video") {
+  const replicate = getReplicate();
+  const pred = await replicate.predictions.create({
+    version: process.env.REPLICATE_VEIL_AUTOBLUR_VERSION!,
+    input: {
+      media: rawUrl,
+      media_type: mediaType,
+      regions: DESIRED_REGIONS.join(","),
+      box_threshold: Number(process.env.BLUR_BOX_THRESHOLD ?? 0.3),
+      dilation: Number(process.env.BLUR_MASK_DILATION ?? 12),
+      blur_strength: Number(process.env.BLUR_STRENGTH ?? 30),
+      feather: Number(process.env.BLUR_FEATHER ?? 16),
+    },
+    webhook: webhookUrl(jobId, "cog"),
+    webhook_events_filter: ["completed"],
+  });
+  await updateJob(jobId, { status: "detecting" });
+  await addPredictionId(jobId, "cog", pred.id);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Stage 1 — DETECT (multi-stage path). Starts a Replicate prediction with a
 // webhook; never awaits completion.
 // ════════════════════════════════════════════════════════════════════════════
 export type DetectOpts = { dilation?: number; boxThreshold?: number };
@@ -85,8 +124,41 @@ export async function advance(
   const job = await getJob(jobId);
   if (!job) return;
 
+  if (stage === "cog") return onCogComplete(job, payload.output);
   if (stage === "detect") return onDetectComplete(job, payload.output);
   if (stage === "track") return onTrackComplete(job, payload.output);
+}
+
+// ── on Cog complete (P5) ────────────────────────────────────────────────────
+// The Cog returns { media, detected_regions, max_confidence } — one shot.
+async function onCogComplete(job: BlurJob, output: unknown) {
+  const o = (output ?? {}) as {
+    media?: string;
+    detected_regions?: number;
+    max_confidence?: number;
+  };
+  const conf = String(o.max_confidence ?? 0);
+
+  // Fail-closed: nothing detected → manual review (the Cog still returns a
+  // fully-blurred artifact, but we never auto-publish it).
+  if (!o.media || !o.detected_regions) {
+    await updateJob(job.id, { status: "manual_review", detectionConfidence: conf });
+    return;
+  }
+
+  await updateJob(job.id, { status: "compositing" });
+  const ext = job.mediaType === "video" ? "mp4" : "jpg";
+  const blob = await put(`blur-jobs/${job.id}/blurred.${ext}`, await fetchBuffer(o.media), {
+    access: "private",
+    contentType: job.mediaType === "video" ? "video/mp4" : "image/jpeg",
+    allowOverwrite: true,
+  });
+  await updateJob(job.id, {
+    status: "ready_for_review",
+    blurredBlobUrl: blob.pathname,
+    originalBlobKey: job.rawBlobKey,
+    detectionConfidence: conf,
+  });
 }
 
 // ── on detect complete ─────────────────────────────────────────────────────
