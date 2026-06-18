@@ -15,10 +15,20 @@ const nextConfig: NextConfig = {
     "fluent-ffmpeg",
     "replicate",
   ],
-  // sharp loads its native libvips .so via a dynamic require the file tracer
-  // can't follow, so force the platform binaries into the blur functions.
+  // sharp (libvips) and the ffmpeg/ffprobe installers load their native binaries
+  // via dynamic requires the file tracer can't follow — force them into the
+  // functions that composite (blur routes) and extract keyframes (posts upload).
   outputFileTracingIncludes: {
-    "/api/blur/**": ["./node_modules/@img/**", "./node_modules/sharp/**"],
+    "/api/blur/**": [
+      "./node_modules/@img/**",
+      "./node_modules/sharp/**",
+      "./node_modules/@ffmpeg-installer/**",
+      "./node_modules/@ffprobe-installer/**",
+    ],
+    "/api/posts": [
+      "./node_modules/@ffmpeg-installer/**",
+      "./node_modules/@ffprobe-installer/**",
+    ],
   },
   images: {
     remotePatterns: [
