@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
     "fluent-ffmpeg",
     "replicate",
   ],
+  // sharp loads its native libvips .so via a dynamic require the file tracer
+  // can't follow, so force the platform binaries into the blur functions.
+  outputFileTracingIncludes: {
+    "/api/blur/**": ["./node_modules/@img/**", "./node_modules/sharp/**"],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
