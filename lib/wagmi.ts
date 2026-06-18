@@ -1,4 +1,4 @@
-import { createConfig, http } from "wagmi";
+import { createConfig, createStorage, http } from "wagmi";
 import { tempoModerato } from "wagmi/chains";
 import { tempoWallet } from "wagmi/connectors";
 import { parseUnits } from "viem";
@@ -39,7 +39,9 @@ export const wagmiConfig = createConfig({
       process.env.TEMPO_RPC_URL ?? TEMPO_TESTNET.rpcHttp,
     ),
   },
-  storage: null,
+  storage: createStorage({
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  }),
   // App Router: enables cookie-based hydration of wallet state.
   ssr: true,
 });
