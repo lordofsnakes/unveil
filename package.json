@@ -1,0 +1,42 @@
+{
+  "name": "mpp-onlyfans",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "SERWIST_SUPPRESS_TURBOPACK_WARNING=1 next build --webpack",
+    "start": "next start",
+    "db:push": "dotenv -e .env.local -- drizzle-kit push",
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "seed": "dotenv -e .env.local -- tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@serwist/next": "^9.5.11",
+    "@tanstack/react-query": "^5.101.0",
+    "@vercel/blob": "^2.4.1",
+    "@vercel/og": "^0.11.1",
+    "accounts": "^0.14.9",
+    "drizzle-orm": "^0.45.2",
+    "framer-motion": "^12.40.0",
+    "mppx": "^0.7.0",
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "viem": "^2.52.2",
+    "wagmi": "^3.6.17"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.10",
+    "serwist": "^9.5.11",
+    "tailwindcss": "^4",
+    "tsx": "^4.22.4",
+    "typescript": "^5"
+  }
+}
