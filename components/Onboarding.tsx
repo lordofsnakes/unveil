@@ -1,22 +1,118 @@
 "use client";
 
-import { useState } from "react";
-import { useConnect, useConnectors } from "wagmi";
-import { Lock, Eye, EyeOff } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+import { useSignIn, useSignUp } from "@clerk/nextjs/legacy";
+import { Eye, EyeOff, Lock } from "lucide-react";
 
-/**
- * Login screen (matches the prototype onboarding). Email/password + social are
- * presentational for the demo; "Sign in with Passkey" triggers the real Tempo
- * passkey connector. Any path dismisses the gate and drops into the feed.
- */
-export function Onboarding({ onSkip }: { onSkip: () => void }) {
-  const { connect, isPending } = useConnect();
-  const [connector] = useConnectors();
+type AuthMode = "sign-in" | "sign-up";
+type OAuthStrategy = "oauth_google" | "oauth_x";
 
+function errorMessage(err: unknown) {
+  const clerkError = err as { errors?: { longMessage?: string; message?: string }[] };
+  return (
+    clerkError.errors?.[0]?.longMessage ??
+    clerkError.errors?.[0]?.message ??
+    (err instanceof Error ? err.message : "Authentication failed")
+  );
+}
+
+export function Onboarding() {
+  const router = useRouter();
+  const { isSignedIn } = useAuth();
+  const signInState = useSignIn();
+  const signUpState = useSignUp();
+  const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const canLogin = email.trim() !== "" && password !== "";
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = email.trim() !== "" && password !== "" && !isPending;
+
+  useEffect(() => {
+    if (isSignedIn) router.replace("/");
+  }, [isSignedIn, router]);
+
+  if (isSignedIn) return null;
+
+  async function completeWithSession(sessionId: string | null) {
+    if (!sessionId || !signInState.isLoaded || !signUpState.isLoaded) {
+      throw new Error("Sign-in needs another verification step.");
+    }
+    const setActive = mode === "sign-in" ? signInState.setActive : signUpState.setActive;
+    await setActive({ session: sessionId });
+    router.replace("/");
+    router.refresh();
+  }
+
+  async function submitEmailPassword() {
+    if (!canSubmit || !signInState.isLoaded || !signUpState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      if (mode === "sign-in") {
+        const result = await signInState.signIn.create({
+          identifier: email.trim(),
+          password,
+        });
+        await completeWithSession(result.createdSessionId);
+      } else {
+        const result = await signUpState.signUp.create({
+          emailAddress: email.trim(),
+          password,
+        });
+        if (result.status === "complete") {
+          await completeWithSession(result.createdSessionId);
+        } else {
+          setError("Check Clerk sign-up settings; this flow needs another verification step.");
+        }
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function startOAuth(strategy: OAuthStrategy) {
+    if (!signInState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      await signInState.signIn.authenticateWithRedirect({
+        strategy,
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/",
+        continueSignUp: true,
+        continueSignIn: true,
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+      setIsPending(false);
+    }
+  }
+
+  async function startPasskey() {
+    if (!signInState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const result = await signInState.signIn.authenticateWithPasskey({
+        flow: "discoverable",
+      });
+      if (result.status !== "complete" || !result.createdSessionId) {
+        throw new Error("Passkey sign-in needs another verification step.");
+      }
+      await signInState.setActive({ session: result.createdSessionId });
+      router.replace("/");
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+      setIsPending(false);
+    }
+  }
 
   return (
     <div
@@ -28,13 +124,8 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
     >
       <div
         className="mx-auto flex w-full max-w-md flex-col px-7 pb-10"
-        // `pt-safe` (a custom utility) was clobbering Tailwind's `pt-14`, collapsing
-        // the intended 56px top padding to the bare safe-area inset (0 in a browser),
-        // which jammed the wordmark against the top edge. Keep the design's 56px while
-        // still clearing the notch on devices whose inset exceeds it.
         style={{ paddingTop: "max(56px, calc(env(safe-area-inset-top, 0px) + 20px))" }}
       >
-        {/* Wordmark */}
         <div className="mb-6 flex items-center gap-[11px]">
           <span
             className="size-[34px] rounded-full"
@@ -53,11 +144,13 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
           </span>
         </div>
 
-        <h1 className="m-0 mb-[30px] max-w-[330px] text-[29px] font-bold leading-[1.14] tracking-[-0.02em]">
+        <h1 className="m-0 mb-[30px] max-w-[330px] text-[29px] font-bold leading-[1.14]">
           Log in to support your favorite creators
         </h1>
 
-        <div className="text-text mb-[13px] text-sm font-semibold">Log in</div>
+        <div className="text-text mb-[13px] text-sm font-semibold">
+          {mode === "sign-in" ? "Log in" : "Create account"}
+        </div>
 
         <input
           aria-label="Email"
@@ -80,7 +173,7 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Password"
             type={showPw ? "text" : "password"}
-            autoComplete="current-password"
+            autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
             className="bg-surface-2 text-text placeholder:text-faint h-[54px] w-full rounded-[14px] pl-[18px] pr-[52px] text-base outline-none focus:border-[color:var(--primary)]"
             style={{ border: "1px solid var(--hairline-2)" }}
           />
@@ -94,19 +187,18 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
           </button>
         </div>
 
-        {/* Primary form action — demo enters the feed once both fields are filled */}
         <button
           type="button"
-          onClick={onSkip}
-          disabled={!canLogin}
+          onClick={submitEmailPassword}
+          disabled={!canSubmit}
           className="h-[54px] w-full rounded-pill text-[15px] font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
           style={
-            canLogin
+            canSubmit
               ? { background: "var(--primary)", color: "#fff", boxShadow: "0 8px 28px var(--glow)" }
               : { background: "var(--surface-3)", color: "var(--faint)" }
           }
         >
-          LOG IN
+          {isPending ? "OPENING..." : mode === "sign-in" ? "LOG IN" : "SIGN UP"}
         </button>
 
         <p className="text-faint mt-3.5 text-[12.5px] leading-[1.55]">
@@ -116,6 +208,8 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
           are at least 18 years old.
         </p>
 
+        {error && <p className="text-danger mt-3 text-[13px]">{error}</p>}
+
         <div
           className="text-primary flex items-center justify-center gap-3 text-sm font-semibold"
           style={{ margin: "26px 0 22px" }}
@@ -124,30 +218,35 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
             Forgot password?
           </button>
           <span className="text-faint">·</span>
-          <button type="button" className="hover:text-primary-hover">
-            Sign up for Veil
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
+            }}
+            className="hover:text-primary-hover"
+          >
+            {mode === "sign-in" ? "Sign up for Veil" : "Log in instead"}
           </button>
         </div>
 
-        {/* Social / passkey */}
         <div className="flex flex-col gap-[13px]">
-          {/* Passkey — solid red, the REAL Tempo connect */}
           <button
             type="button"
-            onClick={() => connect({ connector })}
+            onClick={startPasskey}
             disabled={isPending}
             className="text-primary-fg relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985] disabled:opacity-60"
             style={{ background: "var(--primary)", boxShadow: "0 6px 22px var(--glow)" }}
           >
             <Lock size={19} className="absolute left-[22px]" />
-            {isPending ? "OPENING…" : "SIGN IN WITH PASSKEY"}
+            SIGN IN WITH PASSKEY
           </button>
 
-          {/* X — red stroke outline */}
           <button
             type="button"
-            onClick={onSkip}
-            className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
+            onClick={() => startOAuth("oauth_x")}
+            disabled={isPending}
+            className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985] disabled:opacity-60"
             style={{ border: "1px solid var(--primary)", background: "transparent" }}
           >
             <svg
@@ -163,11 +262,11 @@ export function Onboarding({ onSkip }: { onSkip: () => void }) {
             SIGN IN WITH X
           </button>
 
-          {/* Google — red stroke outline, multicolor G */}
           <button
             type="button"
-            onClick={onSkip}
-            className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
+            onClick={() => startOAuth("oauth_google")}
+            disabled={isPending}
+            className="text-text relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985] disabled:opacity-60"
             style={{ border: "1px solid var(--primary)", background: "transparent" }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" className="absolute left-[22px]" aria-hidden>

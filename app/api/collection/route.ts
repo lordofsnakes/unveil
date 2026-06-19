@@ -1,20 +1,26 @@
-import { NextRequest } from "next/server";
-import { getUserByWallet, getUnlockedPosts } from "@/lib/db/queries";
+import { getUnlockedPosts } from "@/lib/db/queries";
 import { presignPrivateGet } from "@/lib/blob";
+import {
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/collection?wallet=0x… — the fan's unlocked posts as gallery tiles.
+ * GET /api/collection — the fan's unlocked posts as gallery tiles.
  * Each tile presigns the REAL (unblurred) media: having paid is the access
  * grant, so the collection shows what they own, not the public preview.
  */
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
-  if (!user) return Response.json({ items: [] });
+export async function GET() {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
 
   const rows = await getUnlockedPosts(user.id);
   const items = await Promise.all(

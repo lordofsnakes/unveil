@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import {
   Heart,
@@ -35,7 +35,7 @@ export function PostCard({
   isUnlocked?: boolean;
   priority?: boolean;
 }) {
-  const account = useAccount();
+  const { isSignedIn } = useAuth();
   const router = useRouter();
   const free = Number(post.unlockPrice) === 0;
   const [unlocked, setUnlocked] = useState(initialUnlocked ?? false);
@@ -50,14 +50,17 @@ export function PostCard({
   }, []);
 
   const messageCreator = useCallback(async () => {
-    if (!account.address || !post.creator.wallet || messaging) return;
+    if (!isSignedIn) {
+      router.push("/sign-in");
+      return;
+    }
+    if (!post.creator.wallet || messaging) return;
     setMessaging(true);
     try {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          wallet: account.address,
           creatorWallet: post.creator.wallet,
         }),
       });
@@ -68,7 +71,7 @@ export function PostCard({
     } finally {
       setMessaging(false);
     }
-  }, [account.address, post.creator.wallet, messaging, router]);
+  }, [isSignedIn, post.creator.wallet, messaging, router]);
 
   const username = post.creator.username ?? "creator";
   const revealed = unlocked || free;
@@ -152,7 +155,7 @@ export function PostCard({
           <button
             type="button"
             onClick={messageCreator}
-            disabled={messaging || !account.address || !post.creator.wallet}
+            disabled={messaging || !post.creator.wallet}
             aria-label="Message creator"
             className="flex size-10 items-center justify-center hover:text-text disabled:opacity-50"
           >

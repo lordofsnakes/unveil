@@ -340,3 +340,79 @@ export async function unlockWithCustodialBalance({
     };
   });
 }
+
+export async function rollbackCustodialUnlock({
+  userId,
+  postId,
+  amount,
+  txHash,
+}: {
+  userId: string;
+  postId: string;
+  amount: string;
+  txHash: string;
+}) {
+  return getDb().transaction(async (tx) => {
+    const unlock = await tx.query.unlocks.findFirst({
+      where: and(
+        eq(unlocks.fanId, userId),
+        eq(unlocks.postId, postId),
+        eq(unlocks.paymentTxHash, txHash),
+      ),
+    });
+    if (!unlock) return null;
+
+    await tx
+      .delete(loyaltyLedger)
+      .where(eq(loyaltyLedger.referenceId, unlock.id));
+    await tx.delete(unlocks).where(eq(unlocks.id, unlock.id));
+    await tx
+      .delete(custodialLedger)
+      .where(eq(custodialLedger.reference, txHash));
+
+    const [balance] = await tx
+      .update(userBalances)
+      .set({
+        availableBalance: sql`${userBalances.availableBalance} + ${amount}`,
+        escrowedBalance: sql`${userBalances.escrowedBalance} - ${amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(userBalances.userId, userId))
+      .returning();
+
+    return balance;
+  });
+}
+
+export async function finalizeCustodialUnlockPaymentHash({
+  userId,
+  postId,
+  internalTxHash,
+  paymentTxHash,
+}: {
+  userId: string;
+  postId: string;
+  internalTxHash: string;
+  paymentTxHash: string;
+}) {
+  await getDb().transaction(async (tx) => {
+    const [unlock] = await tx
+      .update(unlocks)
+      .set({ paymentTxHash })
+      .where(
+        and(
+          eq(unlocks.fanId, userId),
+          eq(unlocks.postId, postId),
+          eq(unlocks.paymentTxHash, internalTxHash),
+        ),
+      )
+      .returning();
+
+    if (!unlock) return;
+
+    await tx
+      .update(loyaltyLedger)
+      .set({ txHash: paymentTxHash })
+      .where(eq(loyaltyLedger.referenceId, unlock.id));
+  });
+}

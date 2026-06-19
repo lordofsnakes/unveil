@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { Bell } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomNav } from "@/components/BottomNav";
@@ -20,22 +20,22 @@ type Notif = {
 };
 
 export default function NotificationsPage() {
-  const account = useAccount();
-  const connected = account.status === "connected" && account.address;
+  const { isSignedIn } = useAuth();
+  const connected = isSignedIn === true;
   const [items, setItems] = useState<Notif[] | null>(null);
 
   useEffect(() => {
-    if (!account.address) return;
+    if (!connected) return;
     let live = true;
     setItems(null);
-    fetch(`/api/notifications?wallet=${account.address}`)
+    fetch("/api/notifications")
       .then((r) => r.json())
       .then((d) => live && setItems(d.items ?? []))
       .catch(() => live && setItems([]));
     return () => {
       live = false;
     };
-  }, [account.address]);
+  }, [connected]);
 
   return (
     <main className="flex min-h-dvh flex-1 flex-col">

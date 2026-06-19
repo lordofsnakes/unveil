@@ -54,3 +54,6 @@ test.mp4
 # python bytecode (cog dev)
 __pycache__/
 *.pyc
+
+# clerk configuration (can include secrets)
+/.clerk/

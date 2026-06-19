@@ -1,17 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { Onboarding } from "./Onboarding";
 
-/**
- * Shows the onboarding hero until the user connects (or chooses to browse).
- * Once connected the gate stays dismissed for the session.
- */
+/** Optional auth gate for views that intentionally want an inline sign-in wall. */
 export function ConnectGate() {
-  const account = useAccount();
-  const [skipped, setSkipped] = useState(false);
+  const { isLoaded, isSignedIn } = useAuth();
 
-  if (account.status === "connected" || skipped) return null;
-  return <Onboarding onSkip={() => setSkipped(true)} />;
+  if (!isLoaded || isSignedIn) return null;
+  return <Onboarding />;
 }

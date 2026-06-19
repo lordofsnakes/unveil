@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getUserByWallet, getPost } from "@/lib/db/queries";
+import { getPost } from "@/lib/db/queries";
 import {
   getThreadFor,
   getMessages,
@@ -8,23 +8,30 @@ import {
 } from "@/lib/db/messages";
 import { presignPrivateGet } from "@/lib/blob";
 import { formatUsd } from "@/lib/constants";
+import {
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * GET /api/messages/[id]?wallet=0x… — a conversation. PPV messages are resolved
+ * GET /api/messages/[id] — a conversation. PPV messages are resolved
  * per-viewer: the sender sees their locked card, an unlocked recipient gets a
  * presigned real-media URL, everyone else gets the blurred preview + price.
  */
-export async function GET(req: NextRequest, { params }: Params) {
+export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
-  if (!user) return Response.json({ error: "Unknown user" }, { status: 404 });
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
 
   const thread = await getThreadFor(user.id, id);
   if (!thread) return Response.json({ error: "Thread not found" }, { status: 404 });
@@ -89,22 +96,24 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 /**
  * POST /api/messages/[id] — send a message.
- * Body: { wallet, kind?: "text"|"ppv", body?, postId? }. PPV is creator-only and
+ * Body: { kind?: "text"|"ppv", body?, postId? }. PPV is creator-only and
  * must reference one of the creator's own posts (it reuses the unlock flow).
  */
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const { wallet, kind = "text", body, postId } = (await req.json()) as {
-    wallet?: string;
+  const { kind = "text", body, postId } = (await req.json()) as {
     kind?: "text" | "ppv";
     body?: string;
     postId?: string;
   };
 
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
-  if (!user) return Response.json({ error: "Unknown user" }, { status: 404 });
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
 
   const thread = await getThreadFor(user.id, id);
   if (!thread) return Response.json({ error: "Thread not found" }, { status: 404 });

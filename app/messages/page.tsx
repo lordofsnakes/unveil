@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { MessageCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomNav } from "@/components/BottomNav";
@@ -20,23 +20,23 @@ type Thread = {
 };
 
 export default function MessagesPage() {
-  const account = useAccount();
-  const connected = account.status === "connected" && account.address;
+  const { isSignedIn } = useAuth();
+  const connected = isSignedIn === true;
   const [threads, setThreads] = useState<Thread[] | null>(null);
   const [filter, setFilter] = useState<"all" | "unread">("all");
 
   useEffect(() => {
-    if (!account.address) return;
+    if (!connected) return;
     let live = true;
     setThreads(null);
-    fetch(`/api/messages?wallet=${account.address}`)
+    fetch("/api/messages")
       .then((r) => r.json())
       .then((d) => live && setThreads(d.threads ?? []))
       .catch(() => live && setThreads([]));
     return () => {
       live = false;
     };
-  }, [account.address]);
+  }, [connected]);
 
   const unreadTotal = threads?.reduce((n, t) => n + (t.unread > 0 ? 1 : 0), 0) ?? 0;
   const visible =

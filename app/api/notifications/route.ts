@@ -1,21 +1,27 @@
-import { NextRequest } from "next/server";
-import { getUserByWallet, getNotifications } from "@/lib/db/queries";
+import { getNotifications } from "@/lib/db/queries";
 import { CREATOR_CUT } from "@/lib/constants";
+import {
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/notifications?wallet=0x… — derived activity feed: the unlock events
+ * GET /api/notifications — derived activity feed: the unlock events
  * on this user's posts ("someone unveiled your post"). No dedicated table; the
  * `unlocks` ledger is the source of truth. The displayed amount is the creator's
  * net cut, matching what actually lands with them.
  */
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
-  if (!user) return Response.json({ items: [] });
+export async function GET() {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
 
   const rows = await getNotifications(user.id);
   const items = rows.map((r) => {

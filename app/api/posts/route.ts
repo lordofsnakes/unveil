@@ -2,25 +2,31 @@ import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
 import { uploadPrivate, presignPrivateGet } from "@/lib/blob";
 import {
-  upsertCreator,
-  getUserByWallet,
+  markUserCreator,
   getPostsByCreator,
 } from "@/lib/db/queries";
 import { formatUsd } from "@/lib/constants";
 import { createJob, updateJob } from "@/lib/blur/jobs";
+import {
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/posts?wallet=0x… — a creator's own posts. Powers the "attach locked
+ * GET /api/posts — a creator's own posts. Powers the "attach locked
  * content" picker in DMs (creator-only PPV). Previews are presigned for display.
  */
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
-  if (!user) return Response.json({ posts: [] });
+export async function GET() {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
 
   const rows = await getPostsByCreator(user.id);
   const posts = await Promise.all(
@@ -52,9 +58,17 @@ const MAX_BYTES = 25 * 1024 * 1024;
  * flow") is a separate workstream; this route just hands off a clean `uploaded`
  * job + raw blob + draft metadata in the shape `lib/blur` expects.
  *
- *   POST /api/posts  (multipart/form-data: file, title, price, wallet)
+ *   POST /api/posts  (multipart/form-data: file, title, price)
  */
 export async function POST(req: NextRequest) {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -65,7 +79,6 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const price = (form.get("price") as string | null)?.trim() ?? "";
-  const wallet = (form.get("wallet") as string | null)?.trim() ?? "";
 
   if (!(file instanceof File) || file.size === 0) {
     return Response.json({ error: "Media file is required" }, { status: 400 });
@@ -79,9 +92,6 @@ export async function POST(req: NextRequest) {
   if (!title) {
     return Response.json({ error: "Caption is required" }, { status: 400 });
   }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-    return Response.json({ error: "Connect a wallet to post" }, { status: 401 });
-  }
   const priceNum = Number(price);
   if (!Number.isFinite(priceNum) || priceNum < 0) {
     return Response.json({ error: "Invalid price" }, { status: 400 });
@@ -92,7 +102,7 @@ export async function POST(req: NextRequest) {
     : "image";
 
   // 1. Store the raw upload privately. The pipeline presigns this on demand.
-  const creator = await upsertCreator(wallet);
+  const creator = await markUserCreator(user.id);
   const ext =
     file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ||
     (mediaType === "video" ? "mp4" : "jpg");

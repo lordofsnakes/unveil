@@ -3,25 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { Home, Bell, Plus, MessageCircle } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
 
 export function BottomNav() {
   const pathname = usePathname();
-  const account = useAccount();
+  const { isSignedIn } = useAuth();
   const [unread, setUnread] = useState(0);
   const [drawer, setDrawer] = useState(false);
 
   // Real unread-message badge. Refetched on navigation (cheap) so opening a
   // thread — which marks it read — clears the badge when you come back.
   useEffect(() => {
-    if (!account.address) {
+    if (!isSignedIn) {
       setUnread(0);
       return;
     }
     let live = true;
-    fetch(`/api/messages?wallet=${account.address}`)
+    fetch("/api/messages")
       .then((r) => r.json())
       .then((d) => {
         if (!live) return;
@@ -35,7 +35,7 @@ export function BottomNav() {
     return () => {
       live = false;
     };
-  }, [account.address, pathname]);
+  }, [isSignedIn, pathname]);
 
   const TABS = [
     { href: "/", label: "Feed", icon: Home },

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { auth } from "@clerk/nextjs/server";
 import { Database, Sparkles } from "lucide-react";
 import { getFeed } from "@/lib/db/queries";
 import { presignPrivateGet } from "@/lib/blob";
@@ -6,6 +7,7 @@ import { PostCard, type FeedPost } from "@/components/PostCard";
 import { TopBar } from "@/components/TopBar";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
+import { Onboarding } from "@/components/Onboarding";
 
 // Feed depends on live DB + per-request account state, so render dynamically.
 export const dynamic = "force-dynamic";
@@ -35,6 +37,9 @@ async function loadFeed(): Promise<FeedPost[] | null> {
 }
 
 export default async function FeedPage() {
+  const { isAuthenticated } = await auth();
+  if (!isAuthenticated) return <Onboarding />;
+
   const posts = await loadFeed();
 
   return (

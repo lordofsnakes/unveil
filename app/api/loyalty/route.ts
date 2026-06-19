@@ -1,29 +1,33 @@
-import { NextRequest } from "next/server";
-import { getUserByWallet, getLoyaltyBalance, getUserStats } from "@/lib/db/queries";
+import { getLoyaltyBalance, getUserStats } from "@/lib/db/queries";
+import {
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
 /**
- * Loyalty (VEIL points) balance for a wallet. The off-chain ledger is the
+ * Loyalty (VEIL points) balance for the signed-in user. The off-chain ledger is the
  * source of truth for the demo; when ENABLE_ONCHAIN_REWARDS is on, the same
  * points are also minted on-chain as VEIL.
  *
- *   GET /api/loyalty?wallet=0x...
+ *   GET /api/loyalty
  */
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) {
-    return Response.json({ error: "Missing wallet" }, { status: 400 });
+export async function GET() {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
   }
 
-  const user = await getUserByWallet(wallet);
-  const points = user ? await getLoyaltyBalance(user.id) : "0";
-  const stats = user
-    ? await getUserStats(user.id)
-    : { unlockCount: 0, totalPaid: "0", avgSettleMs: 0 };
+  const points = await getLoyaltyBalance(user.id);
+  const stats = await getUserStats(user.id);
 
   return Response.json({
-    wallet: wallet.toLowerCase(),
+    wallet: user.walletAddress,
     points,
     stats,
     veilToken: process.env.NEXT_PUBLIC_VEIL_TOKEN_ADDRESS || null,

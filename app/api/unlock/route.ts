@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getPost,
-  hasUnlocked,
-  recordUnlock,
-  upsertUser,
-} from "@/lib/db/queries";
+import { getPost } from "@/lib/db/queries";
 import { presignPrivateGet } from "@/lib/blob";
 import {
-  CUSTODIAL_ACCOUNT_COOKIE,
-  getOrCreateCustodialAccount,
+  finalizeCustodialUnlockPaymentHash,
+  rollbackCustodialUnlock,
   unlockWithCustodialBalance,
 } from "@/lib/custodial";
 import { POINTS_PER_UNLOCK } from "@/lib/constants";
-import { verifyTempoPayment } from "@/lib/tempo-server";
+import {
+  requireCurrentAppUser,
+  setAccountCookie,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
+import { settleUnlockWithCustodialWallet } from "@/lib/custodial-wallets";
 
 // Postgres + Supabase Storage signing need the Node.js runtime.
 export const runtime = "nodejs";
@@ -22,15 +23,7 @@ function jsonWithAccountCookie(
   userId: string,
   init?: ResponseInit,
 ) {
-  const res = NextResponse.json(body, init);
-  res.cookies.set(CUSTODIAL_ACCOUNT_COOKIE, userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
-  return res;
+  return setAccountCookie(NextResponse.json(body, init), userId);
 }
 
 export async function POST(req: NextRequest) {
@@ -52,12 +45,27 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Missing fields" }, { status: 400 });
   }
 
+  let appUser;
+  try {
+    appUser = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
+
   // 1. Post must exist.
   const post = await getPost(postId);
   if (!post) return Response.json({ error: "Post not found" }, { status: 404 });
 
-  // 2a. Direct Tempo wallet payment: verify the tx receipt before recording.
-  if (paymentTxHash || walletAddress) {
+  // 2a. Legacy direct Tempo wallet payment remains disabled unless explicitly
+  // enabled during the migration window.
+  if (
+    process.env.ENABLE_LEGACY_TEMPO_WALLET_UNLOCKS === "true" &&
+    (paymentTxHash || walletAddress)
+  ) {
+    const [{ hasUnlocked, recordUnlock, upsertUser }, { verifyTempoPayment }] =
+      await Promise.all([import("@/lib/db/queries"), import("@/lib/tempo-server")]);
+
     if (!paymentTxHash || !walletAddress) {
       return Response.json({ error: "Missing payment proof" }, { status: 400 });
     }
@@ -97,13 +105,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 2b. Custodial account demo path: users hold an app balance, not a visible wallet.
-  const account = await getOrCreateCustodialAccount(
-    req.cookies.get(CUSTODIAL_ACCOUNT_COOKIE)?.value,
-  );
+  if (paymentTxHash || walletAddress) {
+    return Response.json({ error: "Legacy wallet unlocks are disabled" }, { status: 400 });
+  }
+
+  // 2b. Custodial app-balance path: Clerk identity owns the local ledger row.
   const settlementMs = settlementStartedAt ? Date.now() - settlementStartedAt : 0;
   const unlock = await unlockWithCustodialBalance({
-    userId: account.userId,
+    userId: appUser.id,
     postId,
     amount: post.unlockPrice,
     settlementMs,
@@ -116,9 +125,42 @@ export async function POST(req: NextRequest) {
         balance: unlock.balance,
         required: unlock.required,
       },
-      account.userId,
+      appUser.id,
       { status: 402 },
     );
+  }
+
+  if (
+    unlock.status === "unlocked" &&
+    process.env.ENABLE_USER_TEMPO_SETTLEMENT === "true"
+  ) {
+    const settlement = await settleUnlockWithCustodialWallet({
+      userId: appUser.id,
+      amountUsd: post.unlockPrice,
+      reference: unlock.txHash,
+    });
+    if (!settlement.ok) {
+      await rollbackCustodialUnlock({
+        userId: appUser.id,
+        postId,
+        amount: post.unlockPrice,
+        txHash: unlock.txHash,
+      });
+      return jsonWithAccountCookie(
+        { error: `Settlement failed: ${settlement.reason}` },
+        appUser.id,
+        { status: 402 },
+      );
+    }
+    if (settlement.txHash) {
+      await finalizeCustodialUnlockPaymentHash({
+        userId: appUser.id,
+        postId,
+        internalTxHash: unlock.txHash,
+        paymentTxHash: settlement.txHash,
+      });
+      unlock.txHash = settlement.txHash;
+    }
   }
 
   // 3. Issue a short-lived signed URL for the unblurred media.
@@ -131,8 +173,8 @@ export async function POST(req: NextRequest) {
       settlementMs,
       alreadyUnlocked: unlock.status === "already_unlocked",
       balance: unlock.status === "unlocked" ? unlock.balance : undefined,
-      internalReference: unlock.txHash,
+      paymentTxHash: unlock.txHash,
     },
-    account.userId,
+    appUser.id,
   );
 }

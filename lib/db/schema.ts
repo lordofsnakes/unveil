@@ -39,6 +39,11 @@ export const platformKeyStatusEnum = pgEnum("platform_key_status", [
   "retired",
 ]);
 
+export const custodialWalletStatusEnum = pgEnum("custodial_wallet_status", [
+  "active",
+  "retired",
+]);
+
 export const paymentDepositStatusEnum = pgEnum("payment_deposit_status", [
   "pending",
   "succeeded",
@@ -51,6 +56,10 @@ export const users = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     walletAddress: varchar("wallet_address", { length: 42 }).unique().notNull(),
+    clerkId: varchar("clerk_id", { length: 128 }).unique(),
+    email: varchar("email", { length: 255 }),
+    displayName: varchar("display_name", { length: 255 }),
+    imageUrl: text("image_url"),
     // Tempo virtual address for per-user deposits
     tempoVirtualAddress: varchar("tempo_virtual_address", { length: 42 }).unique(),
     username: varchar("username", { length: 32 }).unique(),
@@ -60,7 +69,10 @@ export const users = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (t) => [uniqueIndex("users_wallet_idx").on(t.walletAddress)],
+  (t) => [
+    uniqueIndex("users_wallet_idx").on(t.walletAddress),
+    uniqueIndex("users_clerk_idx").on(t.clerkId),
+  ],
 );
 
 // ── posts ────────────────────────────────────────────────────────────────────
@@ -383,8 +395,33 @@ export const platformSigningKeys = pgTable(
   ],
 );
 
+// ── custodial_wallets ────────────────────────────────────────────────────────
+export const custodialWallets = pgTable(
+  "custodial_wallets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    address: varchar("address", { length: 42 }).unique().notNull(),
+    encryptedPrivateKey: text("encrypted_private_key").notNull(),
+    iv: varchar("iv", { length: 32 }).notNull(),
+    authTag: varchar("auth_tag", { length: 32 }).notNull(),
+    status: custodialWalletStatusEnum("status").default("active").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("custodial_wallets_user_idx").on(t.userId),
+    uniqueIndex("custodial_wallets_address_idx").on(t.address),
+    index("custodial_wallets_status_idx").on(t.status),
+  ],
+);
+
 // ── Relations ────────────────────────────────────────────────────────────────
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   posts: many(posts),
   unlocks: many(unlocks),
   loyaltyEntries: many(loyaltyLedger),
@@ -392,6 +429,10 @@ export const usersRelations = relations(users, ({ many }) => ({
   sentMessages: many(messages),
   custodialLedgerEntries: many(custodialLedger),
   paymentDeposits: many(paymentDeposits),
+  custodialWallet: one(custodialWallets, {
+    fields: [users.id],
+    references: [custodialWallets.userId],
+  }),
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -437,4 +478,8 @@ export const custodialLedgerRelations = relations(custodialLedger, ({ one }) => 
 
 export const paymentDepositsRelations = relations(paymentDeposits, ({ one }) => ({
   user: one(users, { fields: [paymentDeposits.userId], references: [users.id] }),
+}));
+
+export const custodialWalletsRelations = relations(custodialWallets, ({ one }) => ({
+  user: one(users, { fields: [custodialWallets.userId], references: [users.id] }),
 }));

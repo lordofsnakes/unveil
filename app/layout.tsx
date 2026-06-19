@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
@@ -17,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Veil — lift the veil",
-  description: "Pay-per-tap premium content on Tempo. Tap to reveal.",
+  description: "Pay-per-tap premium content with invisible app-balance payments.",
   applicationName: "Veil",
   appleWebApp: {
     capable: true,
@@ -53,15 +54,17 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="bg-bg text-text flex min-h-full flex-col">
-        <Script
-          id="veil-theme"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeScript }}
-        />
-        <Providers>
-          {children}
-          <InstallBanner />
-        </Providers>
+        <ClerkProvider>
+          <Script
+            id="veil-theme"
+            strategy="beforeInteractive"
+            dangerouslySetInnerHTML={{ __html: themeScript }}
+          />
+          <Providers>
+            {children}
+            <InstallBanner />
+          </Providers>
+        </ClerkProvider>
       </body>
     </html>
   );

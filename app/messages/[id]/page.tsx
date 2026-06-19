@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import {
   ArrowLeft,
   MoreHorizontal,
@@ -16,7 +16,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useUnlock } from "@/components/useUnlock";
 
 // A conversation is per-viewer (PPV cards resolve to the viewer's unlock state),
-// so this is a live client view keyed on the connected wallet.
+// so this is a live client view keyed on the Clerk session.
 
 type TextMsg = { id: string; kind: "text"; me: boolean; text: string };
 type PpvMsg = {
@@ -50,8 +50,8 @@ type MyPost = {
 
 export default function DmPage() {
   const { id } = useParams<{ id: string }>();
-  const account = useAccount();
-  const wallet = account.address;
+  const { isSignedIn } = useAuth();
+  const connected = isSignedIn === true;
 
   const [thread, setThread] = useState<ThreadInfo | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -62,8 +62,8 @@ export default function DmPage() {
   const endRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    if (!wallet) return;
-    const res = await fetch(`/api/messages/${id}?wallet=${wallet}`);
+    if (!connected) return;
+    const res = await fetch(`/api/messages/${id}`);
     if (!res.ok) {
       setLoaded(true);
       return;
@@ -72,7 +72,7 @@ export default function DmPage() {
     setThread(d.thread);
     setMessages(d.messages);
     setLoaded(true);
-  }, [id, wallet]);
+  }, [connected, id]);
 
   useEffect(() => {
     load();
@@ -84,14 +84,14 @@ export default function DmPage() {
 
   async function sendText() {
     const body = text.trim();
-    if (!body || !wallet || sending) return;
+    if (!body || !connected || sending) return;
     setSending(true);
     setText("");
     try {
       const res = await fetch(`/api/messages/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, kind: "text", body }),
+        body: JSON.stringify({ kind: "text", body }),
       });
       if (res.ok) await load();
       else setText(body); // restore on failure
@@ -101,12 +101,12 @@ export default function DmPage() {
   }
 
   async function sendPpv(postId: string) {
-    if (!wallet) return;
+    if (!connected) return;
     setAttachOpen(false);
     await fetch(`/api/messages/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet, kind: "ppv", postId }),
+      body: JSON.stringify({ kind: "ppv", postId }),
     });
     await load();
   }
@@ -152,7 +152,7 @@ export default function DmPage() {
 
       {/* Conversation */}
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-2.5 px-3.5 py-[18px]">
-        {!wallet ? (
+        {!connected ? (
           <p className="text-faint mt-16 text-center text-sm">
             Sign in to view this conversation.
           </p>
@@ -211,7 +211,7 @@ export default function DmPage() {
             onKeyDown={(e) => e.key === "Enter" && sendText()}
             placeholder="Send a message…"
             autoComplete="off"
-            disabled={!wallet}
+            disabled={!connected}
             className="bg-surface-2 border-hairline text-text placeholder:text-faint h-[42px] flex-1 rounded-pill border px-4 text-[14px] outline-none"
           />
           <button
@@ -227,9 +227,8 @@ export default function DmPage() {
         </div>
       </div>
 
-      {attachOpen && wallet && (
+      {attachOpen && (
         <AttachSheet
-          wallet={wallet}
           onPick={sendPpv}
           onClose={() => setAttachOpen(false)}
         />
@@ -305,7 +304,7 @@ function PpvCard({ msg }: { msg: PpvMsg }) {
                   <button
                     type="button"
                     onClick={unlock}
-                    disabled={state === "pending" || !connected}
+                    disabled={state === "pending"}
                     className="bg-primary text-primary-fg flex h-[42px] items-center gap-1.5 rounded-pill px-[18px] text-[13.5px] font-semibold disabled:opacity-60"
                     style={{ boxShadow: "0 6px 20px var(--primary-glow)" }}
                   >
@@ -338,22 +337,20 @@ function PpvCard({ msg }: { msg: PpvMsg }) {
 
 /** Bottom sheet: pick one of the creator's posts to send as a locked DM card. */
 function AttachSheet({
-  wallet,
   onPick,
   onClose,
 }: {
-  wallet: string;
   onPick: (postId: string) => void;
   onClose: () => void;
 }) {
   const [posts, setPosts] = useState<MyPost[] | null>(null);
 
   useEffect(() => {
-    fetch(`/api/posts?wallet=${wallet}`)
+    fetch("/api/posts")
       .then((r) => r.json())
       .then((d) => setPosts(d.posts ?? []))
       .catch(() => setPosts([]));
-  }, [wallet]);
+  }, []);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;

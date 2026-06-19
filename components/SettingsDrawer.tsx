@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { useDisconnect, useAccount } from "wagmi";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import {
   X,
   User,
@@ -26,8 +26,9 @@ export function SettingsDrawer({
   onClose: () => void;
 }) {
   const { theme, toggle } = useTheme();
-  const { disconnect } = useDisconnect();
-  const account = useAccount();
+  const { isSignedIn } = useAuth();
+  const { signOut } = useClerk();
+  const { user } = useUser();
 
   useEffect(() => {
     if (!open) return;
@@ -48,8 +49,8 @@ export function SettingsDrawer({
   if (!open) return null;
 
   const isLight = theme === "light";
-  const shortAddr = account.address
-    ? `${account.address.slice(0, 6)}…${account.address.slice(-4)}`
+  const identity = isSignedIn
+    ? user?.primaryEmailAddress?.emailAddress || user?.fullName || "Signed in"
     : "Not signed in";
 
   return (
@@ -100,8 +101,8 @@ export function SettingsDrawer({
               <X size={22} />
             </button>
           </div>
-          <div className="mt-3 text-lg font-bold">You</div>
-          <div className="text-faint tabular mt-0.5 text-[13px]">{shortAddr}</div>
+          <div className="mt-3 text-lg font-bold">{user?.fullName || "You"}</div>
+          <div className="text-faint mt-0.5 truncate text-[13px]">{identity}</div>
         </div>
 
         {/* Rows */}
@@ -148,7 +149,7 @@ export function SettingsDrawer({
           <button
             type="button"
             onClick={() => {
-              disconnect();
+              void signOut({ redirectUrl: "/" });
               onClose();
             }}
             className="flex w-full items-center gap-3.5 px-[22px] py-3.5 text-left"

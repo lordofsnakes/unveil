@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  CUSTODIAL_ACCOUNT_COOKIE,
-  getOrCreateCustodialAccount,
   normalizeMoney,
   recordPendingCardDeposit,
 } from "@/lib/custodial";
+import {
+  requireCurrentAppUser,
+  setAccountCookie,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 import { createStripeOnrampSession } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -18,15 +22,7 @@ function jsonWithAccountCookie(
   userId: string,
   init?: ResponseInit,
 ) {
-  const res = NextResponse.json(body, init);
-  res.cookies.set(CUSTODIAL_ACCOUNT_COOKIE, userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
-  return res;
+  return setAccountCookie(NextResponse.json(body, init), userId);
 }
 
 function platformWalletAddress() {
@@ -53,11 +49,11 @@ function clientIp(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as { amount?: string };
-  const account = await getOrCreateCustodialAccount(
-    req.cookies.get(CUSTODIAL_ACCOUNT_COOKIE)?.value,
-  );
+  let userId: string | null = null;
 
   try {
+    const user = await requireCurrentAppUser();
+    userId = user.id;
     const amount = normalizeMoney(body.amount ?? "25");
     const cents = Math.round(Number(amount) * 100);
     if (cents < 100 || cents > 50000) {
@@ -84,7 +80,7 @@ export async function POST(req: NextRequest) {
       destination_networks: [destinationNetwork],
       customer_ip_address: clientIp(req),
       metadata: {
-        userId: account.userId,
+        userId: user.id,
         amount,
         currency: "usd",
       },
@@ -95,18 +91,17 @@ export async function POST(req: NextRequest) {
     }
 
     await recordPendingCardDeposit({
-      userId: account.userId,
+      userId: user.id,
       amount,
       currency: "usd",
       providerSessionId: session.id,
     });
 
-    return jsonWithAccountCookie({ url: session.redirect_url }, account.userId);
+    return jsonWithAccountCookie({ url: session.redirect_url }, user.id);
   } catch (err) {
-    return jsonWithAccountCookie(
-      { error: err instanceof Error ? err.message : "Deposit failed" },
-      account.userId,
-      { status: 400 },
-    );
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    const body = { error: err instanceof Error ? err.message : "Deposit failed" };
+    if (!userId) return NextResponse.json(body, { status: 400 });
+    return jsonWithAccountCookie(body, userId, { status: 400 });
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { Menu, Zap, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +15,14 @@ type Loyalty = {
   stats: { unlockCount: number; totalPaid: string; avgSettleMs: number };
   onchain: boolean;
 };
-type Profile = { username: string | null; avatar: string | null };
+type Profile = {
+  username: string | null;
+  avatar: string | null;
+  walletAddress: string;
+  displayName: string | null;
+  email: string | null;
+  imageUrl: string | null;
+};
 type CollectionItem = {
   postId: string;
   title: string;
@@ -24,7 +31,8 @@ type CollectionItem = {
 };
 
 export default function ProfilePage() {
-  const account = useAccount();
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
   const [drawer, setDrawer] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [loyalty, setLoyalty] = useState<Loyalty | null>(null);
@@ -32,37 +40,37 @@ export default function ProfilePage() {
   const [collection, setCollection] = useState<CollectionItem[] | null>(null);
 
   useEffect(() => {
-    if (!account.address) return;
-    const wallet = account.address;
+    if (!isSignedIn) return;
     let live = true;
-    fetch(`/api/loyalty?wallet=${wallet}`)
+    fetch("/api/loyalty")
       .then((r) => r.json())
       .then((d) => live && setLoyalty(d))
       .catch(() => {});
-    fetch(`/api/user?wallet=${wallet}`)
+    fetch("/api/user")
       .then((r) => r.json())
       .then((d) => live && setProfile(d.user))
       .catch(() => {});
-    fetch(`/api/collection?wallet=${wallet}`)
+    fetch("/api/collection")
       .then((r) => r.json())
       .then((d) => live && setCollection(d.items ?? []))
       .catch(() => live && setCollection([]));
     return () => {
       live = false;
     };
-  }, [account.address]);
+  }, [isSignedIn]);
 
-  const connected = account.status === "connected" && account.address;
-  const fallbackHandle = account.address
-    ? `@${account.address.slice(2, 8).toLowerCase()}`
+  const connected = isSignedIn === true;
+  const fallbackHandle = profile?.walletAddress
+    ? `@${profile.walletAddress.slice(2, 8).toLowerCase()}`
     : "@you";
   const handle = profile?.username ? `@${profile.username}` : fallbackHandle;
-  const displayName = profile?.username ?? "You";
+  const displayName =
+    profile?.username ?? profile?.displayName ?? user?.fullName ?? "You";
   const stats = loyalty?.stats;
 
   function share() {
-    if (account.address) {
-      window.open(`/api/og/flex-card?wallet=${account.address}`, "_blank");
+    if (profile?.walletAddress) {
+      window.open(`/api/og/flex-card?wallet=${profile.walletAddress}`, "_blank");
     }
   }
 
@@ -192,13 +200,12 @@ export default function ProfilePage() {
 
       <BottomNav />
       <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
-      {editOpen && account.address && (
+      {editOpen && (
         <EditProfileSheet
-          wallet={account.address}
           current={profile?.username ?? ""}
           onClose={() => setEditOpen(false)}
           onSaved={(p) => {
-            setProfile(p);
+            setProfile((current) => ({ ...(current ?? p), ...p } as Profile));
             setEditOpen(false);
           }}
         />
@@ -208,15 +215,13 @@ export default function ProfilePage() {
 }
 
 function EditProfileSheet({
-  wallet,
   current,
   onClose,
   onSaved,
 }: {
-  wallet: string;
   current: string;
   onClose: () => void;
-  onSaved: (p: Profile) => void;
+  onSaved: (p: Partial<Profile>) => void;
 }) {
   const [name, setName] = useState(current);
   const [saving, setSaving] = useState(false);
@@ -243,10 +248,10 @@ function EditProfileSheet({
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet, username: name }),
+        body: JSON.stringify({ username: name }),
       });
       const d = (await res.json().catch(() => ({}))) as {
-        user?: Profile;
+        user?: Partial<Profile>;
         error?: string;
       };
       if (!res.ok) throw new Error(d.error ?? "Could not save");

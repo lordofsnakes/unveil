@@ -25,7 +25,7 @@ export function UnlockButton({
       <button
         type="button"
         onClick={unlock}
-        disabled={pending || !connected}
+        disabled={pending}
         className="bg-primary text-primary-fg flex h-[50px] min-w-[188px] items-center justify-center gap-2.5 rounded-pill px-6 text-[15.5px] font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.96] disabled:opacity-60"
         style={{ boxShadow: "0 8px 30px var(--primary-glow)" }}
       >
@@ -42,7 +42,8 @@ export function UnlockButton({
           <>
             <Lock size={18} strokeWidth={2.2} />
             <span>
-              Unlock · <span className="tabular font-medium">${formatUsd(price)}</span>
+              {connected ? "Unlock" : "Sign in"} ·{" "}
+              <span className="tabular font-medium">${formatUsd(price)}</span>
             </span>
           </>
         )}

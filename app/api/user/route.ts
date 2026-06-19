@@ -1,45 +1,44 @@
 import { NextRequest } from "next/server";
+import { updateUserProfileById } from "@/lib/db/queries";
 import {
-  getUserByWallet,
-  upsertUser,
-  updateUserProfile,
-} from "@/lib/db/queries";
+  requireCurrentAppUser,
+  unauthorizedJson,
+  UnauthorizedError,
+} from "@/lib/app-user";
 
 export const runtime = "nodejs";
 
-const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
 // 3–20 chars, lowercase letters/digits/underscore. Matches the unique column.
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
-/** GET /api/user?wallet=0x… — the editable profile fields for a wallet. */
-export async function GET(req: NextRequest) {
-  const wallet = req.nextUrl.searchParams.get("wallet");
-  if (!wallet) return Response.json({ error: "Missing wallet" }, { status: 400 });
-
-  const user = await getUserByWallet(wallet);
+/** GET /api/user — editable profile fields for the signed-in user. */
+export async function GET() {
+  let user;
+  try {
+    user = await requireCurrentAppUser();
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    throw err;
+  }
   return Response.json({
-    user: user
-      ? {
-          username: user.username,
-          avatar: user.avatar,
-          isCreator: user.isCreator,
-          walletAddress: user.walletAddress,
-        }
-      : null,
+    user: {
+      username: user.username,
+      avatar: user.avatar,
+      isCreator: user.isCreator,
+      walletAddress: user.walletAddress,
+      displayName: user.displayName,
+      email: user.email,
+      imageUrl: user.imageUrl,
+    },
   });
 }
 
-/** PATCH /api/user — update username/avatar for the connected wallet. */
+/** PATCH /api/user — update username/avatar for the signed-in user. */
 export async function PATCH(req: NextRequest) {
-  const { wallet, username, avatar } = (await req.json()) as {
-    wallet?: string;
+  const { username, avatar } = (await req.json()) as {
     username?: string;
     avatar?: string;
   };
-
-  if (!wallet || !WALLET_RE.test(wallet)) {
-    return Response.json({ error: "Invalid wallet" }, { status: 400 });
-  }
 
   const patch: { username?: string; avatar?: string } = {};
   if (username !== undefined) {
@@ -58,20 +57,22 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ error: "Nothing to update" }, { status: 400 });
   }
 
-  // Ensure a row exists for browse-only wallets that never posted/unlocked.
-  await upsertUser(wallet);
-
   try {
-    const user = await updateUserProfile(wallet, patch);
+    const current = await requireCurrentAppUser();
+    const user = await updateUserProfileById(current.id, patch);
     return Response.json({
       user: {
         username: user.username,
         avatar: user.avatar,
         isCreator: user.isCreator,
         walletAddress: user.walletAddress,
+        displayName: user.displayName,
+        email: user.email,
+        imageUrl: user.imageUrl,
       },
     });
   } catch (err) {
+    if (err instanceof UnauthorizedError) return unauthorizedJson();
     // Unique-violation on username → 409.
     const code = (err as { code?: string })?.code;
     if (code === "23505") {

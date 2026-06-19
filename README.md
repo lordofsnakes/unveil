@@ -1,16 +1,17 @@
 # Veil
 
-Pay-per-tap, blur-to-reveal premium content on Tempo. Creators upload private media, the app stores originals in private Supabase Storage, and fans unlock short-lived signed URLs after payment.
+Pay-per-tap, blur-to-reveal premium content. Clerk handles identity, the existing Drizzle/Postgres database stores local users and balances, and fans unlock short-lived signed URLs from a custodial app-balance ledger. Optional backend Tempo settlement is feature-flagged off by default.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
 | Framework | Next.js 16 App Router, React 19, webpack build |
-| Chain | Tempo Moderato testnet, wagmi, viem, `wagmi/tempo` |
-| Wallet | Tempo Wallet passkey connector and access keys |
-| DB | Supabase Postgres with Drizzle ORM |
-| Storage | Private Supabase Storage bucket with signed URLs |
+| Auth | Clerk custom sign-in with Google, X, email/password, and passkeys |
+| Payments | Custodial app-balance ledger in Postgres; optional backend Tempo settlement |
+| Chain | Tempo Moderato testnet, viem, optional server-side settlement |
+| DB | Vercel/Neon-style Postgres `DATABASE_URL` with Drizzle ORM |
+| Storage | Private Supabase Storage or Vercel Blob with signed URLs |
 | PWA | Serwist service worker |
 
 ## Local Setup
@@ -20,18 +21,32 @@ Create `.env.local` with:
 ```bash
 DATABASE_URL=
 DATABASE_URL_UNPOOLED=
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-in
+BLOB_READ_WRITE_TOKEN=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_STORAGE_BUCKET=media
-NEXT_PUBLIC_PLATFORM_WALLET=
 PLATFORM_WALLET_ADDRESS=
 PLATFORM_PRIVATE_KEY=
+CUSTODIAL_KEY_ENCRYPTION_SECRET=
+ENABLE_LEGACY_TEMPO_WALLET_UNLOCKS=false
+ENABLE_USER_TEMPO_SETTLEMENT=false
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Use the Supabase pooled connection string for `DATABASE_URL`. Use the direct connection string for `DATABASE_URL_UNPOOLED` only if it resolves from your machine; otherwise leave it unset so Drizzle uses the pooled URL. If your database password contains URL-special characters, use Supabase's copied URI or URL-encode the password.
+Use the pooled Postgres connection string for `DATABASE_URL`. Use the direct connection string for `DATABASE_URL_UNPOOLED` only if it resolves from your machine; otherwise leave it unset so Drizzle uses the pooled URL. If your database password contains URL-special characters, use the provider-copied URI or URL-encode the password.
 
-In Supabase Storage, create a private bucket named `media`, or set `SUPABASE_STORAGE_BUCKET` to the private bucket name you use.
+For storage, either set `BLOB_READ_WRITE_TOKEN` for Vercel Blob or create a private Supabase bucket named `media` and provide the Supabase envs.
+
+In the Clerk Dashboard, enable the auth strategies this UI exposes:
+
+- Google social connection.
+- X social connection using your X/Twitter developer credentials.
+- Passkeys under sign-up/sign-in options.
+- Email/password if you want the email form visible as-is.
 
 ## Run
 
@@ -58,5 +73,7 @@ npm run token:create
 
 - `npm run db:push` creates the Supabase tables from `lib/db/schema.ts`.
 - `npm run seed` uploads demo media to Supabase Storage and seeds demo posts, unlocks, loyalty, and messages.
-- The active unlock UI uses the Tempo wallet hook and posts a payment tx hash to `/api/unlock`.
+- The active unlock UI posts only the post id to `/api/unlock`; the API derives the signed-in local user from Clerk and debits `user_balances`.
+- `ENABLE_LEGACY_TEMPO_WALLET_UNLOCKS=true` temporarily re-enables the old direct wallet proof branch.
+- `ENABLE_USER_TEMPO_SETTLEMENT=true` requires funded per-user custodial wallets and `CUSTODIAL_KEY_ENCRYPTION_SECRET`.
 - Hackathon build. Testnet only. Never commit real keys.

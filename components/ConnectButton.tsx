@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CreditCard, Landmark } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { CreditCard, Landmark, LogOut } from "lucide-react";
 
 type Account = {
   userId: string;
@@ -19,29 +21,45 @@ function formatMoney(value: string | null) {
 }
 
 export function ConnectButton() {
+  const router = useRouter();
+  const { signOut } = useClerk();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
   const [account, setAccount] = useState<Account | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshAccount = useCallback(async () => {
+    if (!isSignedIn) {
+      setAccount(null);
+      return;
+    }
     const res = await fetch("/api/account", { cache: "no-store" });
     if (!res.ok) return;
 
     const body = (await res.json()) as { account: Account };
     setAccount(body.account);
-  }, []);
+  }, [isSignedIn]);
 
   useEffect(() => {
+    if (!isSignedIn) {
+      setAccount(null);
+      return;
+    }
     void refreshAccount();
 
     const refresh = () => void refreshAccount();
     window.addEventListener("veil:balance-changed", refresh);
     return () => window.removeEventListener("veil:balance-changed", refresh);
-  }, [refreshAccount]);
+  }, [isSignedIn, refreshAccount]);
 
   const startDeposit = useCallback(
     async (amount: string) => {
+      if (!isSignedIn) {
+        router.push("/sign-in");
+        return;
+      }
       setIsPending(true);
       setError(null);
 
@@ -64,22 +82,38 @@ export function ConnectButton() {
         setIsPending(false);
       }
     },
-    [],
+    [isSignedIn, router],
   );
 
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={() => {
+          if (isLoaded && !isSignedIn) {
+            router.push("/sign-in");
+            return;
+          }
+          setIsOpen((open) => !open);
+        }}
         aria-expanded={isOpen}
         className="bg-primary text-primary-fg rounded-pill px-5 py-2.5 text-sm font-semibold transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.97]"
       >
-        {account ? formatMoney(account.availableBalance) : "Balance"}
+        {isSignedIn ? (account ? formatMoney(account.availableBalance) : "Balance") : "Sign in"}
       </button>
 
-      {isOpen && (
+      {isOpen && isSignedIn && (
         <div className="border-hairline bg-surface absolute right-0 top-12 z-50 w-64 rounded-[22px] border p-4 shadow-2xl">
+          <div className="mb-4">
+            <p className="text-text truncate text-sm font-semibold">
+              {user?.fullName || user?.primaryEmailAddress?.emailAddress || "Signed in"}
+            </p>
+            {user?.primaryEmailAddress?.emailAddress && (
+              <p className="text-faint mt-0.5 truncate text-xs">
+                {user.primaryEmailAddress.emailAddress}
+              </p>
+            )}
+          </div>
           <div>
             <p className="text-faint text-xs uppercase tracking-wide">
               Available
@@ -120,6 +154,15 @@ export function ConnectButton() {
           </div>
 
           {error && <p className="text-danger mt-3 text-sm">{error}</p>}
+
+          <button
+            type="button"
+            onClick={() => signOut({ redirectUrl: "/" })}
+            className="text-muted mt-4 flex w-full items-center justify-center gap-1.5 rounded-[14px] px-3 py-2 text-sm font-semibold hover:text-text"
+          >
+            <LogOut size={15} />
+            Sign out
+          </button>
         </div>
       )}
     </div>

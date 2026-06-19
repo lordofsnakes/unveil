@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useAuth } from "@clerk/nextjs";
 import { ArrowLeft, ImagePlus, X, Check, ShieldCheck } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
 
 type Status = "idle" | "submitting" | "done";
 
 export default function NewPostPage() {
-  const account = useAccount();
+  const { isSignedIn } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -20,7 +20,7 @@ export default function NewPostPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const connected = account.status === "connected" && account.address;
+  const connected = isSignedIn === true;
   const isVideo = file?.type.startsWith("video");
 
   // Manage the object URL lifecycle for the local preview.
@@ -50,7 +50,6 @@ export default function NewPostPage() {
       body.set("file", file);
       body.set("title", title.trim());
       body.set("price", price || "0");
-      body.set("wallet", account.address as string);
 
       const res = await fetch("/api/posts", { method: "POST", body });
       const j = (await res.json().catch(() => ({}))) as {

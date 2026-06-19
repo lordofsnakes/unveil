@@ -1,6 +1,29 @@
+import { randomBytes } from "node:crypto";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { getDb } from "./index";
-import { users, posts, unlocks, loyaltyLedger } from "./schema";
+import { users, posts, unlocks, loyaltyLedger, userBalances } from "./schema";
+
+export type ClerkUserInput = {
+  clerkId: string;
+  email?: string | null;
+  displayName?: string | null;
+  imageUrl?: string | null;
+};
+
+function internalAddress() {
+  return `0x${randomBytes(20).toString("hex")}`;
+}
+
+function clerkProfile(input: ClerkUserInput): Partial<typeof users.$inferInsert> {
+  const displayName = input.displayName?.trim() || null;
+  const imageUrl = input.imageUrl?.trim() || null;
+  return {
+    clerkId: input.clerkId,
+    email: input.email?.trim().toLowerCase() || null,
+    displayName,
+    imageUrl,
+  };
+}
 
 export async function upsertUser(walletAddress: string) {
   const db = getDb();
@@ -27,6 +50,108 @@ export async function upsertCreator(walletAddress: string) {
       target: users.walletAddress,
       set: { isCreator: true },
     })
+    .returning();
+  return user;
+}
+
+export async function getUserById(userId: string) {
+  const db = getDb();
+  return db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+}
+
+export async function getUserByClerkId(clerkId: string) {
+  const db = getDb();
+  return db.query.users.findFirst({
+    where: eq(users.clerkId, clerkId),
+  });
+}
+
+export async function ensureUserBalance(userId: string) {
+  await getDb().insert(userBalances).values({ userId }).onConflictDoNothing();
+}
+
+export async function getOrCreateUserForClerk(input: ClerkUserInput) {
+  const db = getDb();
+  const profile = clerkProfile(input);
+  const [user] = await db
+    .insert(users)
+    .values({
+      ...profile,
+      avatar: input.imageUrl?.trim() || null,
+      walletAddress: internalAddress(),
+    })
+    .onConflictDoUpdate({
+      target: users.clerkId,
+      set: profile,
+    })
+    .returning();
+
+  await ensureUserBalance(user.id);
+  return user;
+}
+
+export async function attachAnonymousCustodialAccountToClerk({
+  cookieUserId,
+  clerkUser,
+}: {
+  cookieUserId?: string;
+  clerkUser: ClerkUserInput;
+}) {
+  const profile = clerkProfile(clerkUser);
+  return getDb().transaction(async (tx) => {
+    const existing = await tx.query.users.findFirst({
+      where: eq(users.clerkId, clerkUser.clerkId),
+    });
+    if (existing) {
+      const [updated] = await tx
+        .update(users)
+        .set(profile)
+        .where(eq(users.id, existing.id))
+        .returning();
+      await tx.insert(userBalances).values({ userId: updated.id }).onConflictDoNothing();
+      return updated;
+    }
+
+    if (cookieUserId) {
+      const anonymous = await tx.query.users.findFirst({
+        where: eq(users.id, cookieUserId),
+      });
+      if (anonymous && !anonymous.clerkId) {
+        const [attached] = await tx
+          .update(users)
+          .set(profile)
+          .where(eq(users.id, anonymous.id))
+          .returning();
+        await tx
+          .insert(userBalances)
+          .values({ userId: attached.id })
+          .onConflictDoNothing();
+        return attached;
+      }
+    }
+
+    const [created] = await tx
+      .insert(users)
+      .values({
+        ...profile,
+        avatar: clerkUser.imageUrl?.trim() || null,
+        walletAddress: internalAddress(),
+      })
+      .returning();
+    await tx.insert(userBalances).values({ userId: created.id }).onConflictDoNothing();
+    return created;
+  });
+}
+
+/** Mark an existing local user as a creator. */
+export async function markUserCreator(userId: string) {
+  const db = getDb();
+  const [user] = await db
+    .update(users)
+    .set({ isCreator: true })
+    .where(eq(users.id, userId))
     .returning();
   return user;
 }
@@ -145,6 +270,22 @@ export async function updateUserProfile(
     .update(users)
     .set(set)
     .where(eq(users.walletAddress, walletAddress.toLowerCase()))
+    .returning();
+  return user;
+}
+
+export async function updateUserProfileById(
+  userId: string,
+  patch: { username?: string | null; avatar?: string | null },
+) {
+  const db = getDb();
+  const set: Partial<typeof users.$inferInsert> = {};
+  if (patch.username !== undefined) set.username = patch.username;
+  if (patch.avatar !== undefined) set.avatar = patch.avatar;
+  const [user] = await db
+    .update(users)
+    .set(set)
+    .where(eq(users.id, userId))
     .returning();
   return user;
 }
