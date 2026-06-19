@@ -33,7 +33,7 @@ function handleFor(c: Connection) {
 function ConnectionsView() {
   const router = useRouter();
   const params = useSearchParams();
-  const { isSignedIn } = useAppAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const initialTab: Tab = params.get("tab") === "following" ? "following" : "followers";
 
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -125,7 +125,9 @@ function ConnectionsView() {
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 px-4 pb-28">
-        {!connected ? (
+        {!isLoaded ? (
+          <p className="text-faint py-10 text-center text-sm">Loading…</p>
+        ) : !connected ? (
           <div className="mt-20 flex flex-col items-center gap-5 px-8 text-center">
             <p className="text-text font-semibold">Sign in to see your connections</p>
             <ConnectButton />

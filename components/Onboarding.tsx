@@ -97,7 +97,7 @@ function clearStaleOAuthState() {
 
 export function Onboarding() {
   const router = useRouter();
-  const { isSignedIn } = useAppAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const signInState = useSignIn();
   const signUpState = useSignUp();
   const [mode, setMode] = useState<AuthMode>("sign-in");
@@ -124,8 +124,8 @@ export function Onboarding() {
         : email.trim() !== "" && password !== "" && !isPending;
 
   useEffect(() => {
-    if (isSignedIn) router.replace("/");
-  }, [isSignedIn, router]);
+    if (isLoaded && isSignedIn) router.replace("/");
+  }, [isLoaded, isSignedIn, router]);
 
   useEffect(() => {
     const oauthError = new URLSearchParams(window.location.search).get("oauth_error");
@@ -136,7 +136,7 @@ export function Onboarding() {
     router.replace("/sign-in", { scroll: false });
   }, [router]);
 
-  if (isSignedIn) return null;
+  if (!isLoaded || isSignedIn) return null;
 
   async function completeWithSession(sessionId: string | null) {
     if (!sessionId || !signInState.isLoaded || !signUpState.isLoaded) {

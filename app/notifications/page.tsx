@@ -47,7 +47,7 @@ function NotificationsSkeleton() {
 }
 
 export default function NotificationsPage() {
-  const { isSignedIn } = useAppAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const connected = isSignedIn === true;
   const passkey = usePasskeyEnrollment();
   // Local-only synthetic notification — never returned by /api/notifications.
@@ -73,7 +73,9 @@ export default function NotificationsPage() {
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 pb-28">
-        {!connected ? (
+        {!isLoaded ? (
+          <NotificationsSkeleton />
+        ) : !connected ? (
           <div className="mt-24 flex flex-col items-center gap-5 px-8 text-center">
             <Avatar name="you" size="xl" />
             <div>

@@ -29,7 +29,7 @@ function MessagesSkeleton() {
 }
 
 export default function MessagesPage() {
-  const { isSignedIn } = useAppAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const connected = isSignedIn === true;
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const messages = useQuery({
@@ -53,7 +53,9 @@ export default function MessagesPage() {
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 pb-28">
-        {!connected ? (
+        {!isLoaded ? (
+          <MessagesSkeleton />
+        ) : !connected ? (
           <div className="mt-24 flex flex-col items-center gap-5 px-8 text-center">
             <Avatar name="you" size="xl" />
             <div>

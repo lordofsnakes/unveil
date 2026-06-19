@@ -49,7 +49,7 @@ type CollectionItem = {
 type Tab = "posts" | "collection";
 
 export default function ProfilePage() {
-  const { isSignedIn } = useAppAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const { user } = useAppUser();
   const [drawer, setDrawer] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -145,7 +145,9 @@ export default function ProfilePage() {
       </header>
 
       <div className="mx-auto w-full max-w-md flex-1 pb-28">
-        {!connected ? (
+        {!isLoaded ? (
+          <div className="text-faint py-20 text-center text-sm">Loading…</div>
+        ) : !connected ? (
           <div className="mt-20 flex flex-col items-center gap-5 px-8 text-center">
             <Avatar name="you" size="xl" />
             <div>
