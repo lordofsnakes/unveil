@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth, useUser } from "@clerk/nextjs";
 import { Menu, Zap, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +8,7 @@ import { FlexCard } from "@/components/FlexCard";
 import { BottomNav } from "@/components/BottomNav";
 import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { ConnectButton } from "@/components/ConnectButton";
+import { useAppAuth, useAppUser } from "@/components/useAppAuth";
 
 type Loyalty = {
   points: string;
@@ -31,8 +31,8 @@ type CollectionItem = {
 };
 
 export default function ProfilePage() {
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { isSignedIn } = useAppAuth();
+  const { user } = useAppUser();
   const [drawer, setDrawer] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [loyalty, setLoyalty] = useState<Loyalty | null>(null);

@@ -1,6 +1,6 @@
 # Veil
 
-Pay-per-tap, blur-to-reveal premium content. Clerk handles identity, the existing Drizzle/Postgres database stores local users and balances, and fans unlock short-lived signed URLs from a custodial app-balance ledger. Optional backend Tempo settlement is feature-flagged off by default.
+Pay-per-tap, blur-to-reveal premium content. Clerk handles identity, the Drizzle/Postgres database stores local users and balances, and each registered user gets a server-custodial Tempo wallet backing their app balance.
 
 ## Stack
 
@@ -8,8 +8,8 @@ Pay-per-tap, blur-to-reveal premium content. Clerk handles identity, the existin
 |---|---|
 | Framework | Next.js 16 App Router, React 19, webpack build |
 | Auth | Clerk custom sign-in with Google, X, email/password, and passkeys |
-| Payments | Custodial app-balance ledger in Postgres; optional backend Tempo settlement |
-| Chain | Tempo Moderato testnet, viem, optional server-side settlement |
+| Payments | Custodial app-balance ledger in Postgres backed by per-user Tempo wallets |
+| Chain | Tempo Moderato testnet, viem, server-side AlphaUSD settlement |
 | DB | Vercel/Neon-style Postgres `DATABASE_URL` with Drizzle ORM |
 | Storage | Private Supabase Storage or Vercel Blob with signed URLs |
 | PWA | Serwist service worker |
@@ -32,8 +32,9 @@ SUPABASE_STORAGE_BUCKET=media
 PLATFORM_WALLET_ADDRESS=
 PLATFORM_PRIVATE_KEY=
 CUSTODIAL_KEY_ENCRYPTION_SECRET=
+USER_WALLET_FEE_RESERVE_USD=0.10
 ENABLE_LEGACY_TEMPO_WALLET_UNLOCKS=false
-ENABLE_USER_TEMPO_SETTLEMENT=false
+TOPUP_PROVIDER=mock
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
@@ -53,6 +54,7 @@ In the Clerk Dashboard, enable the auth strategies this UI exposes:
 ```bash
 npm install
 npm run db:push
+npm run tempo:wallets:migrate -- --backfill-wallets
 npm run seed
 npm run dev
 ```
@@ -65,6 +67,8 @@ Open `http://localhost:3000`.
 npm run dev
 npm run build
 npm run db:push
+npm run tempo:wallets:migrate -- --backfill-wallets
+npm run tempo:wallets:migrate -- --reset-test-ledger
 npm run seed
 npm run token:create
 ```
@@ -72,8 +76,10 @@ npm run token:create
 ## Notes
 
 - `npm run db:push` creates the Supabase tables from `lib/db/schema.ts`.
+- `npm run tempo:wallets:migrate -- --backfill-wallets` creates missing per-user Tempo wallets.
+- `npm run tempo:wallets:migrate -- --reset-test-ledger` clears local/dev fake balances, deposits, unlocks, unlock loyalty rows, and custodial ledger rows.
 - `npm run seed` uploads demo media to Supabase Storage and seeds demo posts, unlocks, loyalty, and messages.
 - The active unlock UI posts only the post id to `/api/unlock`; the API derives the signed-in local user from Clerk and debits `user_balances`.
 - `ENABLE_LEGACY_TEMPO_WALLET_UNLOCKS=true` temporarily re-enables the old direct wallet proof branch.
-- `ENABLE_USER_TEMPO_SETTLEMENT=true` requires funded per-user custodial wallets and `CUSTODIAL_KEY_ENCRYPTION_SECRET`.
+- Paid unlocks require funded per-user custodial wallets, `CUSTODIAL_KEY_ENCRYPTION_SECRET`, and platform Tempo wallet env vars.
 - Hackathon build. Testnet only. Never commit real keys.

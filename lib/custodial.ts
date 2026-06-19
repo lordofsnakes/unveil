@@ -24,6 +24,44 @@ export type CustodialUnlockResult =
   | { status: "unlocked"; txHash: string; balance: string }
   | { status: "insufficient_funds"; balance: string; required: string };
 
+export type TopUpDepositResult =
+  | {
+      status: "credited";
+      userId: string;
+      depositId: string;
+      amount: string;
+      availableBalance: string;
+    }
+  | {
+      status: "already_processed";
+      userId?: string;
+      depositId?: string;
+      amount?: string;
+      availableBalance: string;
+    };
+
+export type TopUpFundingPreparation =
+  | {
+      status: "funding_pending";
+      userId: string;
+      depositId: string;
+      provider: string;
+      providerSessionId: string;
+      providerTransactionId?: string | null;
+      amount: string;
+      currency: string;
+      destinationWalletAddress?: string | null;
+    }
+  | {
+      status: "already_processed";
+      userId: string;
+      depositId: string;
+      amount: string;
+      availableBalance: string;
+      destinationWalletAddress?: string | null;
+      tempoFundingTxHash?: string | null;
+    };
+
 function internalAddress() {
   return `0x${randomBytes(20).toString("hex")}`;
 }
@@ -113,66 +151,131 @@ export async function recordPendingCardDeposit({
   amount,
   currency,
   providerSessionId,
+  provider = "stripe_onramp",
+  destinationWalletAddress,
+  metadata,
 }: {
   userId: string;
   amount: string;
   currency: string;
   providerSessionId: string;
+  provider?: string;
+  destinationWalletAddress?: string;
+  metadata?: Record<string, unknown>;
 }) {
-  await getDb()
+  const [deposit] = await getDb()
     .insert(paymentDeposits)
     .values({
       userId,
-      provider: "stripe_onramp",
+      provider,
       amount,
       currency: currency.toLowerCase(),
       providerSessionId,
+      destinationWalletAddress,
+      metadata: metadata ?? {},
       status: "pending",
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning();
+
+  return deposit;
 }
 
-export async function creditCardDeposit({
+export async function createPendingTopUpDeposit({
   userId,
   amount,
   currency,
+  provider,
   providerSessionId,
-  providerPaymentIntentId,
+  destinationWalletAddress,
+  metadata,
 }: {
   userId: string;
   amount: string;
   currency: string;
+  provider: string;
+  providerSessionId: string;
+  destinationWalletAddress?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const deposit = await recordPendingCardDeposit({
+    userId,
+    amount,
+    currency,
+    provider,
+    providerSessionId,
+    destinationWalletAddress,
+    metadata,
+  });
+  if (!deposit) {
+    throw new Error("Deposit session already exists");
+  }
+  return deposit;
+}
+
+export async function creditTopUpDeposit({
+  userId,
+  depositId,
+  amount,
+  currency,
+  provider,
+  providerSessionId,
+  providerPaymentIntentId,
+  providerTransactionId,
+  providerCustomerId,
+  providerPaymentMethodId,
+  rawProviderEvent,
+}: {
+  userId: string;
+  depositId?: string;
+  amount: string;
+  currency: string;
+  provider: string;
   providerSessionId: string;
   providerPaymentIntentId?: string;
-}) {
+  providerTransactionId?: string;
+  providerCustomerId?: string;
+  providerPaymentMethodId?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}): Promise<TopUpDepositResult> {
   return getDb().transaction(async (tx) => {
     await tx
       .insert(paymentDeposits)
       .values({
         userId,
-        provider: "stripe_onramp",
+        provider,
         amount,
         currency: currency.toLowerCase(),
         providerSessionId,
         providerPaymentIntentId,
+        providerTransactionId,
+        providerCustomerId,
+        providerPaymentMethodId,
+        metadata: rawProviderEvent ? { rawProviderEvent } : {},
         status: "pending",
       })
       .onConflictDoNothing();
+
+    const whereClause = depositId
+      ? and(eq(paymentDeposits.id, depositId), eq(paymentDeposits.status, "pending"))
+      : and(
+          eq(paymentDeposits.providerSessionId, providerSessionId),
+          eq(paymentDeposits.status, "pending"),
+        );
 
     const [deposit] = await tx
       .update(paymentDeposits)
       .set({
         providerPaymentIntentId,
+        providerTransactionId,
+        providerCustomerId,
+        providerPaymentMethodId,
         status: "succeeded",
         creditedAt: new Date(),
         updatedAt: new Date(),
+        metadata: rawProviderEvent ? { rawProviderEvent } : undefined,
       })
-      .where(
-        and(
-          eq(paymentDeposits.providerSessionId, providerSessionId),
-          eq(paymentDeposits.status, "pending"),
-        ),
-      )
+      .where(whereClause)
       .returning();
 
     if (!deposit) {
@@ -181,6 +284,9 @@ export async function creditCardDeposit({
       });
       return {
         status: "already_processed" as const,
+        userId,
+        depositId,
+        amount,
         availableBalance: current?.availableBalance ?? "0",
       };
     }
@@ -201,14 +307,410 @@ export async function creditCardDeposit({
       eventType: "deposit",
       amount,
       balanceAfter: balance.availableBalance,
-      reference: `stripe:${providerSessionId}`,
+      reference: `${provider}:${providerTransactionId ?? providerSessionId}`,
     });
 
     return {
       status: "credited" as const,
+      userId,
+      depositId: deposit.id,
+      amount,
       availableBalance: balance.availableBalance,
     };
   });
+}
+
+export async function creditCardDeposit({
+  userId,
+  amount,
+  currency,
+  providerSessionId,
+  providerPaymentIntentId,
+}: {
+  userId: string;
+  amount: string;
+  currency: string;
+  providerSessionId: string;
+  providerPaymentIntentId?: string;
+}) {
+  return creditTopUpDeposit({
+    userId,
+    amount,
+    currency,
+    provider: "stripe_onramp",
+    providerSessionId,
+    providerPaymentIntentId,
+  });
+}
+
+export async function creditExistingTopUpDeposit({
+  depositId,
+  provider,
+  providerTransactionId,
+  providerCustomerId,
+  providerPaymentMethodId,
+  amount,
+  currency,
+  rawProviderEvent,
+}: {
+  depositId: string;
+  provider: string;
+  providerTransactionId: string;
+  providerCustomerId?: string;
+  providerPaymentMethodId?: string;
+  amount?: string;
+  currency?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}) {
+  return prepareTopUpDepositFunding({
+    depositId,
+    provider,
+    providerTransactionId,
+    providerCustomerId,
+    providerPaymentMethodId,
+    amount,
+    currency,
+    rawProviderEvent,
+  });
+}
+
+export async function prepareTopUpDepositFunding({
+  depositId,
+  provider,
+  providerTransactionId,
+  providerCustomerId,
+  providerPaymentMethodId,
+  amount,
+  currency,
+  rawProviderEvent,
+}: {
+  depositId: string;
+  provider: string;
+  providerTransactionId: string;
+  providerCustomerId?: string;
+  providerPaymentMethodId?: string;
+  amount?: string;
+  currency?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}): Promise<TopUpFundingPreparation> {
+  const deposit = await getDb().query.paymentDeposits.findFirst({
+    where: eq(paymentDeposits.id, depositId),
+  });
+  if (!deposit) throw new Error("Deposit not found");
+  if (deposit.provider !== provider) throw new Error("Deposit provider mismatch");
+
+  const receivedAmount = amount ? Number(amount) : Number(deposit.amount);
+  const expectedAmount = Number(deposit.amount);
+  if (
+    !Number.isFinite(receivedAmount) ||
+    receivedAmount + 0.00000001 < expectedAmount
+  ) {
+    throw new Error("Provider amount is less than the pending deposit amount");
+  }
+
+  if (deposit.status === "succeeded") {
+    const current = await getDb().query.userBalances.findFirst({
+      where: eq(userBalances.userId, deposit.userId),
+    });
+    return {
+      status: "already_processed",
+      userId: deposit.userId,
+      depositId: deposit.id,
+      amount: deposit.amount,
+      availableBalance: current?.availableBalance ?? "0",
+      destinationWalletAddress: deposit.destinationWalletAddress,
+      tempoFundingTxHash: deposit.tempoFundingTxHash,
+    };
+  }
+
+  if (!["pending", "funding_pending", "funding_failed"].includes(deposit.status)) {
+    throw new Error(`Deposit cannot be funded from status ${deposit.status}`);
+  }
+
+  const metadata = {
+    ...(deposit.metadata ?? {}),
+    ...(rawProviderEvent ? { rawProviderEvent } : {}),
+  };
+
+  const [updated] = await getDb()
+    .update(paymentDeposits)
+    .set({
+      providerTransactionId,
+      providerCustomerId,
+      providerPaymentMethodId,
+      currency: (currency ?? deposit.currency).toLowerCase(),
+      status: "funding_pending",
+      metadata,
+      updatedAt: new Date(),
+    })
+    .where(eq(paymentDeposits.id, deposit.id))
+    .returning();
+
+  return {
+    status: "funding_pending",
+    userId: updated.userId,
+    depositId: updated.id,
+    provider: updated.provider,
+    providerSessionId: updated.providerSessionId,
+    providerTransactionId: updated.providerTransactionId,
+    amount: updated.amount,
+    currency: updated.currency,
+    destinationWalletAddress: updated.destinationWalletAddress,
+  };
+}
+
+export async function completeTopUpDepositFunding({
+  depositId,
+  tempoFundingTxHash,
+  destinationWalletAddress,
+}: {
+  depositId: string;
+  tempoFundingTxHash?: string;
+  destinationWalletAddress?: string;
+}): Promise<TopUpDepositResult> {
+  return getDb().transaction(async (tx) => {
+    const deposit = await tx.query.paymentDeposits.findFirst({
+      where: eq(paymentDeposits.id, depositId),
+    });
+    if (!deposit) throw new Error("Deposit not found");
+
+    if (deposit.status === "succeeded") {
+      const current = await tx.query.userBalances.findFirst({
+        where: eq(userBalances.userId, deposit.userId),
+      });
+      return {
+        status: "already_processed" as const,
+        userId: deposit.userId,
+        depositId: deposit.id,
+        amount: deposit.amount,
+        availableBalance: current?.availableBalance ?? "0",
+      };
+    }
+
+    if (deposit.status !== "funding_pending") {
+      throw new Error(`Deposit cannot be credited from status ${deposit.status}`);
+    }
+
+    await tx.insert(userBalances).values({ userId: deposit.userId }).onConflictDoNothing();
+
+    const [balance] = await tx
+      .update(userBalances)
+      .set({
+        availableBalance: sql`${userBalances.availableBalance} + ${deposit.amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(userBalances.userId, deposit.userId))
+      .returning();
+
+    await tx
+      .update(paymentDeposits)
+      .set({
+        status: "succeeded",
+        tempoFundingTxHash,
+        destinationWalletAddress:
+          destinationWalletAddress ?? deposit.destinationWalletAddress,
+        creditedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(paymentDeposits.id, deposit.id));
+
+    await tx.insert(custodialLedger).values({
+      userId: deposit.userId,
+      eventType: "deposit",
+      amount: deposit.amount,
+      balanceAfter: balance.availableBalance,
+      reference: `${deposit.provider}:${
+        deposit.providerTransactionId ?? deposit.providerSessionId
+      }`,
+    });
+
+    return {
+      status: "credited" as const,
+      userId: deposit.userId,
+      depositId: deposit.id,
+      amount: deposit.amount,
+      availableBalance: balance.availableBalance,
+    };
+  });
+}
+
+export async function markTopUpDepositFundingFailed({
+  depositId,
+  providerTransactionId,
+  destinationWalletAddress,
+  reason,
+  rawProviderEvent,
+}: {
+  depositId: string;
+  providerTransactionId?: string;
+  destinationWalletAddress?: string;
+  reason?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}) {
+  const deposit = await getDb().query.paymentDeposits.findFirst({
+    where: eq(paymentDeposits.id, depositId),
+  });
+  if (!deposit) throw new Error("Deposit not found");
+
+  const [updated] = await getDb()
+    .update(paymentDeposits)
+    .set({
+      providerTransactionId,
+      destinationWalletAddress:
+        destinationWalletAddress ?? deposit.destinationWalletAddress,
+      status: "funding_failed",
+      updatedAt: new Date(),
+      metadata: {
+        ...(deposit.metadata ?? {}),
+        tempoFundingError: reason,
+        ...(rawProviderEvent ? { rawProviderEvent } : {}),
+      },
+    })
+    .where(eq(paymentDeposits.id, depositId))
+    .returning();
+
+  return updated;
+}
+
+export async function markTopUpDepositFailed({
+  depositId,
+  providerTransactionId,
+  reason,
+  rawProviderEvent,
+}: {
+  depositId?: string;
+  providerTransactionId?: string;
+  reason?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}) {
+  if (!depositId && !providerTransactionId) return null;
+  const whereClause = depositId
+    ? eq(paymentDeposits.id, depositId)
+    : eq(paymentDeposits.providerTransactionId, providerTransactionId!);
+
+  const [deposit] = await getDb()
+    .update(paymentDeposits)
+    .set({
+      providerTransactionId,
+      status: "failed",
+      updatedAt: new Date(),
+      metadata: {
+        reason,
+        ...(rawProviderEvent ? { rawProviderEvent } : {}),
+      },
+    })
+    .where(and(whereClause, eq(paymentDeposits.status, "pending")))
+    .returning();
+
+  return deposit ?? null;
+}
+
+export async function reverseTopUpDeposit({
+  depositId,
+  providerTransactionId,
+  reason,
+  status,
+  rawProviderEvent,
+}: {
+  depositId?: string;
+  providerTransactionId: string;
+  reason?: string;
+  status: "refunded" | "chargeback";
+  rawProviderEvent?: Record<string, unknown>;
+}) {
+  return getDb().transaction(async (tx) => {
+    const deposit = depositId
+      ? await tx.query.paymentDeposits.findFirst({
+          where: eq(paymentDeposits.id, depositId),
+        })
+      : await tx.query.paymentDeposits.findFirst({
+          where: eq(paymentDeposits.providerTransactionId, providerTransactionId),
+        });
+    if (!deposit || deposit.status === status) return null;
+    if (deposit.status !== "succeeded") {
+      await tx
+        .update(paymentDeposits)
+        .set({
+          providerTransactionId,
+          status,
+          updatedAt: new Date(),
+          refundedAt: status === "refunded" ? new Date() : undefined,
+          chargebackAt: status === "chargeback" ? new Date() : undefined,
+          metadata: {
+            reason,
+            ...(rawProviderEvent ? { rawProviderEvent } : {}),
+          },
+        })
+        .where(eq(paymentDeposits.id, deposit.id));
+      return null;
+    }
+
+    await tx.insert(userBalances).values({ userId: deposit.userId }).onConflictDoNothing();
+    const [balance] = await tx
+      .update(userBalances)
+      .set({
+        availableBalance: sql`${userBalances.availableBalance} - ${deposit.amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(userBalances.userId, deposit.userId))
+      .returning();
+
+    await tx
+      .update(paymentDeposits)
+      .set({
+        providerTransactionId,
+        status,
+        updatedAt: new Date(),
+        refundedAt: status === "refunded" ? new Date() : undefined,
+        chargebackAt: status === "chargeback" ? new Date() : undefined,
+        metadata: {
+          reason,
+          ...(rawProviderEvent ? { rawProviderEvent } : {}),
+        },
+      })
+      .where(eq(paymentDeposits.id, deposit.id));
+
+    await tx.insert(custodialLedger).values({
+      userId: deposit.userId,
+      eventType: "refund",
+      amount: `-${deposit.amount}`,
+      balanceAfter: balance.availableBalance,
+      reference: `${status}:${providerTransactionId}`,
+    });
+
+    return {
+      userId: deposit.userId,
+      depositId: deposit.id,
+      amount: deposit.amount,
+      availableBalance: balance.availableBalance,
+    };
+  });
+}
+
+export async function attachTempoFundingToDeposit({
+  depositId,
+  txHash,
+  destinationWalletAddress,
+  error,
+}: {
+  depositId: string;
+  txHash?: string;
+  destinationWalletAddress?: string;
+  error?: string;
+}) {
+  await getDb()
+    .update(paymentDeposits)
+    .set({
+      tempoFundingTxHash: txHash,
+      destinationWalletAddress,
+      updatedAt: new Date(),
+      ...(error
+        ? {
+            metadata: { tempoFundingError: error },
+          }
+        : {}),
+    })
+    .where(eq(paymentDeposits.id, depositId));
 }
 
 export async function withdrawCustodialBalance(userId: string, amount: string) {

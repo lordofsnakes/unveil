@@ -2,13 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import { useSignIn, useSignUp } from "@clerk/nextjs/legacy";
 import { Eye, EyeOff, Lock } from "lucide-react";
+import { isDevAuthEnabled } from "@/lib/dev-session";
+import { notifyDevAuthChanged, useAppAuth } from "./useAppAuth";
 
 type AuthMode = "sign-in" | "sign-up";
 type OAuthStrategy = "oauth_google" | "oauth_x";
+type SignInStep = "credentials" | "client-trust";
 type SignUpStep = "credentials" | "verification";
+type EmailCodeSecondFactor = {
+  strategy: string;
+  emailAddressId?: string;
+};
+type ClientTrustSignInResult = {
+  supportedSecondFactors?: EmailCodeSecondFactor[] | null;
+};
+type SignInWithSecondFactor = {
+  prepareSecondFactor: (params: {
+    strategy: "email_code";
+    emailAddressId?: string;
+  }) => Promise<unknown>;
+};
 
 const OAUTH_STATE_KEY_PREFIXES = ["__clerk_oauth", "clerk_oauth", "oauth"];
 const OAUTH_STATE_KEY_PARTS = ["oauth", "sso", "redirect"];
@@ -20,6 +35,21 @@ function errorMessage(err: unknown) {
     clerkError.errors?.[0]?.message ??
     (err instanceof Error ? err.message : "Authentication failed")
   );
+}
+
+function signInStatusMessage(status: string | null) {
+  switch (status) {
+    case "needs_second_factor":
+      return "This Clerk account is asking for a second factor. Turn off MFA in Clerk for password-only login.";
+    case "needs_new_password":
+      return "This account needs a new password before it can log in.";
+    case "needs_client_trust":
+      return "This browser needs email verification before completing sign-in.";
+    case "needs_first_factor":
+      return "Password sign-in is not enabled for this account.";
+    default:
+      return "Sign-in could not be completed. Please try again.";
+  }
 }
 
 function clearStaleOAuthState() {
@@ -46,19 +76,22 @@ function clearStaleOAuthState() {
 
 export function Onboarding() {
   const router = useRouter();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const signInState = useSignIn();
   const signUpState = useSignUp();
   const [mode, setMode] = useState<AuthMode>("sign-in");
+  const [signInStep, setSignInStep] = useState<SignInStep>("credentials");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [signUpStep, setSignUpStep] = useState<SignUpStep>("credentials");
   const [showPw, setShowPw] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [isDevPending, setIsDevPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isVerifyingClientTrust = mode === "sign-in" && signInStep === "client-trust";
   const isVerifyingSignUp = mode === "sign-up" && signUpStep === "verification";
-  const canSubmit = isVerifyingSignUp
+  const canSubmit = isVerifyingSignUp || isVerifyingClientTrust
     ? verificationCode.trim() !== "" && !isPending
     : email.trim() !== "" && password !== "" && !isPending;
 
@@ -87,16 +120,55 @@ export function Onboarding() {
     router.refresh();
   }
 
+  async function prepareClientTrustEmailVerification(
+    signIn: SignInWithSecondFactor,
+    result: ClientTrustSignInResult,
+  ) {
+    const emailCodeFactor = result.supportedSecondFactors?.find(
+      (factor) => factor.strategy === "email_code",
+    );
+
+    if (!emailCodeFactor) {
+      throw new Error("This browser needs verification, but email code sign-in is not enabled in Clerk.");
+    }
+
+    await signIn.prepareSecondFactor({
+      strategy: "email_code",
+      emailAddressId:
+        "emailAddressId" in emailCodeFactor ? emailCodeFactor.emailAddressId : undefined,
+    });
+    setSignInStep("client-trust");
+    setVerificationCode("");
+  }
+
   async function submitEmailPassword() {
     if (!canSubmit || !signInState.isLoaded || !signUpState.isLoaded) return;
     setIsPending(true);
     setError(null);
     try {
       if (mode === "sign-in") {
-        const result = await signInState.signIn.create({
+        let result = await signInState.signIn.create({
+          strategy: "password",
           identifier: email.trim(),
           password,
         });
+
+        if (result.status === "needs_first_factor") {
+          result = await signInState.signIn.attemptFirstFactor({
+            strategy: "password",
+            password,
+          });
+        }
+
+        if (result.status !== "complete") {
+          if (result.status === "needs_client_trust") {
+            await prepareClientTrustEmailVerification(signInState.signIn, result);
+            return;
+          }
+
+          throw new Error(signInStatusMessage(result.status));
+        }
+
         await completeWithSession(result.createdSessionId);
       } else {
         const result = await signUpState.signUp.create({
@@ -113,6 +185,28 @@ export function Onboarding() {
           setVerificationCode("");
         }
       }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function submitClientTrustCode() {
+    if (!canSubmit || !signInState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const result = await signInState.signIn.attemptSecondFactor({
+        strategy: "email_code",
+        code: verificationCode.trim(),
+      });
+      if (result.status !== "complete") {
+        throw new Error(signInStatusMessage(result.status));
+      }
+      await signInState.setActive({ session: result.createdSessionId });
+      router.replace("/");
+      router.refresh();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -187,6 +281,24 @@ export function Onboarding() {
     }
   }
 
+  async function startDevLogin() {
+    setIsDevPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/dev/login", { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Dev login failed");
+      }
+      notifyDevAuthChanged();
+      router.replace("/");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Dev login failed");
+      setIsDevPending(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto"
@@ -222,14 +334,16 @@ export function Onboarding() {
         </h1>
 
         <div className="text-text mb-[13px] text-sm font-semibold">
-          {mode === "sign-in"
+          {isVerifyingClientTrust
+            ? "Verify email"
+            : mode === "sign-in"
             ? "Log in"
             : signUpStep === "verification"
               ? "Verify email"
               : "Create account"}
         </div>
 
-        {isVerifyingSignUp ? (
+        {isVerifyingSignUp || isVerifyingClientTrust ? (
           <input
             aria-label="Verification code"
             name="verification-code"
@@ -285,7 +399,13 @@ export function Onboarding() {
 
         <button
           type="button"
-          onClick={isVerifyingSignUp ? submitVerificationCode : submitEmailPassword}
+          onClick={
+            isVerifyingClientTrust
+              ? submitClientTrustCode
+              : isVerifyingSignUp
+                ? submitVerificationCode
+                : submitEmailPassword
+          }
           disabled={!canSubmit}
           className="h-[54px] w-full rounded-pill text-[15px] font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
           style={
@@ -297,7 +417,9 @@ export function Onboarding() {
           {isPending
             ? "OPENING..."
             : mode === "sign-in"
-              ? "LOG IN"
+              ? isVerifyingClientTrust
+                ? "VERIFY EMAIL"
+                : "LOG IN"
               : isVerifyingSignUp
                 ? "VERIFY EMAIL"
                 : "SIGN UP"}
@@ -324,6 +446,7 @@ export function Onboarding() {
             type="button"
             onClick={() => {
               setError(null);
+              setSignInStep("credentials");
               setSignUpStep("credentials");
               setVerificationCode("");
               setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
@@ -335,6 +458,18 @@ export function Onboarding() {
         </div>
 
         <div className="flex flex-col gap-[13px]">
+          {isDevAuthEnabled() && (
+            <button
+              type="button"
+              onClick={startDevLogin}
+              disabled={isPending || isDevPending}
+              className="text-primary-fg relative flex h-[52px] w-full items-center justify-center rounded-pill text-sm font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985] disabled:opacity-60"
+              style={{ background: "var(--success)", boxShadow: "0 6px 22px rgba(43,180,119,.28)" }}
+            >
+              {isDevPending ? "OPENING DEV ACCOUNT..." : "CONTINUE AS DEV USER"}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={startPasskey}

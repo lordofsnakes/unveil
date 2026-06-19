@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
 import { MessageCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomNav } from "@/components/BottomNav";
 import { ConnectButton } from "@/components/ConnectButton";
 import { EmptyState } from "@/components/EmptyState";
 import { timeAgo } from "@/lib/time";
+import { useAppAuth } from "@/components/useAppAuth";
 
 type Thread = {
   id: string;
@@ -20,7 +20,7 @@ type Thread = {
 };
 
 export default function MessagesPage() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const connected = isSignedIn === true;
   const [threads, setThreads] = useState<Thread[] | null>(null);
   const [filter, setFilter] = useState<"all" | "unread">("all");

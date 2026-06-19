@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import {
   ArrowLeft,
   MoreHorizontal,
@@ -14,9 +13,10 @@ import {
 } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { useUnlock } from "@/components/useUnlock";
+import { useAppAuth } from "@/components/useAppAuth";
 
 // A conversation is per-viewer (PPV cards resolve to the viewer's unlock state),
-// so this is a live client view keyed on the Clerk session.
+// so this is a live client view keyed on the app auth session.
 
 type TextMsg = { id: string; kind: "text"; me: boolean; text: string };
 type PpvMsg = {
@@ -50,7 +50,7 @@ type MyPost = {
 
 export default function DmPage() {
   const { id } = useParams<{ id: string }>();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const connected = isSignedIn === true;
 
   const [thread, setThread] = useState<ThreadInfo | null>(null);

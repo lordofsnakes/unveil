@@ -46,8 +46,13 @@ export const custodialWalletStatusEnum = pgEnum("custodial_wallet_status", [
 
 export const paymentDepositStatusEnum = pgEnum("payment_deposit_status", [
   "pending",
+  "authorized",
+  "funding_pending",
   "succeeded",
+  "funding_failed",
   "failed",
+  "refunded",
+  "chargeback",
 ]);
 
 // ── users ────────────────────────────────────────────────────────────────────
@@ -356,10 +361,25 @@ export const paymentDeposits = pgTable(
     providerPaymentIntentId: varchar("provider_payment_intent_id", {
       length: 255,
     }),
+    providerTransactionId: varchar("provider_transaction_id", { length: 255 }),
+    providerCustomerId: varchar("provider_customer_id", { length: 255 }),
+    providerPaymentMethodId: varchar("provider_payment_method_id", {
+      length: 255,
+    }),
     status: paymentDepositStatusEnum("status").default("pending").notNull(),
     amount: decimal("amount", { precision: 18, scale: 8 }).notNull(),
     currency: varchar("currency", { length: 3 }).default("usd").notNull(),
+    destinationWalletAddress: varchar("destination_wallet_address", {
+      length: 42,
+    }),
+    tempoFundingTxHash: varchar("tempo_funding_tx_hash", { length: 66 }),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
     creditedAt: timestamp("credited_at", { withTimezone: true }),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    chargebackAt: timestamp("chargeback_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -370,6 +390,7 @@ export const paymentDeposits = pgTable(
   (t) => [
     index("payment_deposits_user_idx").on(t.userId, t.createdAt),
     uniqueIndex("payment_deposits_provider_session_idx").on(t.providerSessionId),
+    uniqueIndex("payment_deposits_provider_tx_idx").on(t.providerTransactionId),
   ],
 );
 

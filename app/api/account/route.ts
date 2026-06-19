@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
-import { getOrCreateCustodialAccount } from "@/lib/custodial";
+import { cookies } from "next/headers";
+import {
+  CUSTODIAL_ACCOUNT_COOKIE,
+  getOrCreateCustodialAccount,
+} from "@/lib/custodial";
 import {
   requireCurrentAppUser,
   setAccountCookie,
   unauthorizedJson,
   UnauthorizedError,
 } from "@/lib/app-user";
+import { ensureUserTempoWallet } from "@/lib/custodial-wallets";
+import { getTopUpProvider } from "@/lib/payments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +28,31 @@ export async function GET() {
   try {
     const user = await requireCurrentAppUser();
     const account = await getOrCreateCustodialAccount(user.id);
-    return jsonWithAccountCookie({ account }, user.id);
+    const tempoWalletAddress = await getAccountWalletAddress(user.id);
+    return jsonWithAccountCookie(
+      { account: { ...account, tempoWalletAddress } },
+      user.id,
+    );
   } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
+    if (err instanceof UnauthorizedError) {
+      const cookieStore = await cookies();
+      const account = await getOrCreateCustodialAccount(
+        cookieStore.get(CUSTODIAL_ACCOUNT_COOKIE)?.value,
+      );
+      const tempoWalletAddress = await getAccountWalletAddress(account.userId);
+      return jsonWithAccountCookie(
+        { account: { ...account, tempoWalletAddress } },
+        account.userId,
+      );
+    }
     throw err;
   }
+}
+
+async function getAccountWalletAddress(userId: string) {
+  if (getTopUpProvider().name !== "ccbill") return null;
+  const tempoWallet = await ensureUserTempoWallet(userId);
+  return tempoWallet.address;
 }
 
 export async function POST() {

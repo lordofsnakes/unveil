@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
 import {
+  CUSTODIAL_ACCOUNT_COOKIE,
+  createPendingTopUpDeposit,
+  getOrCreateCustodialAccount,
   normalizeMoney,
-  recordPendingCardDeposit,
 } from "@/lib/custodial";
+import { ensureUserTempoWallet } from "@/lib/custodial-wallets";
 import {
+  type AppUser,
+  getCurrentAppUser,
   requireCurrentAppUser,
   setAccountCookie,
   unauthorizedJson,
   UnauthorizedError,
 } from "@/lib/app-user";
-import { createStripeOnrampSession } from "@/lib/stripe";
+import { getTopUpProvider } from "@/lib/payments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEFAULT_DESTINATION_CURRENCY = "usdc";
-const DEFAULT_DESTINATION_NETWORK = "base";
 
 function jsonWithAccountCookie(
   body: Record<string, unknown>,
@@ -25,26 +29,8 @@ function jsonWithAccountCookie(
   return setAccountCookie(NextResponse.json(body, init), userId);
 }
 
-function platformWalletAddress() {
-  const wallet =
-    process.env.STRIPE_ONRAMP_WALLET_ADDRESS ??
-    process.env.PLATFORM_WALLET_ADDRESS ??
-    process.env.NEXT_PUBLIC_PLATFORM_WALLET;
-
-  if (!wallet) throw new Error("STRIPE_ONRAMP_WALLET_ADDRESS is not set");
-  if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-    throw new Error("Stripe onramp wallet address must be a valid EVM address");
-  }
-
-  return wallet;
-}
-
-function clientIp(req: NextRequest) {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    req.headers.get("x-real-ip") ??
-    undefined
-  );
+function providerSessionId(provider: string) {
+  return `${provider}_${Date.now()}_${randomBytes(8).toString("hex")}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -52,7 +38,11 @@ export async function POST(req: NextRequest) {
   let userId: string | null = null;
 
   try {
-    const user = await requireCurrentAppUser();
+    const provider = getTopUpProvider();
+    const user =
+      provider.name === "mock"
+        ? await getMockTopUpUser()
+        : await requireCurrentAppUser();
     userId = user.id;
     const amount = normalizeMoney(body.amount ?? "25");
     const cents = Math.round(Number(amount) * 100);
@@ -60,48 +50,59 @@ export async function POST(req: NextRequest) {
       throw new Error("Deposit amount must be between $1 and $500");
     }
 
-    const destinationCurrency =
-      process.env.STRIPE_ONRAMP_DESTINATION_CURRENCY ??
-      DEFAULT_DESTINATION_CURRENCY;
-    const destinationNetwork =
-      process.env.STRIPE_ONRAMP_DESTINATION_NETWORK ??
-      DEFAULT_DESTINATION_NETWORK;
-
-    const session = await createStripeOnrampSession({
-      wallet_addresses: {
-        [destinationNetwork]: platformWalletAddress(),
-      },
-      lock_wallet_address: true,
-      source_currency: "usd",
-      source_amount: amount,
-      destination_currency: destinationCurrency,
-      destination_currencies: [destinationCurrency],
-      destination_network: destinationNetwork,
-      destination_networks: [destinationNetwork],
-      customer_ip_address: clientIp(req),
-      metadata: {
-        userId: user.id,
-        amount,
-        currency: "usd",
-      },
-    });
-
-    if (!session.redirect_url) {
-      throw new Error("Stripe did not return an onramp redirect URL");
-    }
-
-    await recordPendingCardDeposit({
+    const wallet =
+      provider.name === "ccbill" ? await ensureUserTempoWallet(user.id) : null;
+    const sessionId = providerSessionId(provider.name);
+    const deposit = await createPendingTopUpDeposit({
       userId: user.id,
       amount,
       currency: "usd",
-      providerSessionId: session.id,
+      provider: provider.name,
+      providerSessionId: sessionId,
+      destinationWalletAddress: wallet?.address,
+      metadata: {
+        intent: "balance_topup",
+      },
     });
 
-    return jsonWithAccountCookie({ url: session.redirect_url }, user.id);
+    const session = await provider.createCheckoutSession({
+      user,
+      depositId: deposit.id,
+      providerSessionId: sessionId,
+      amount,
+      currency: "usd",
+      email: user.email,
+    });
+
+    return jsonWithAccountCookie({ url: session.url }, user.id);
   } catch (err) {
     if (err instanceof UnauthorizedError) return unauthorizedJson();
     const body = { error: err instanceof Error ? err.message : "Deposit failed" };
     if (!userId) return NextResponse.json(body, { status: 400 });
     return jsonWithAccountCookie(body, userId, { status: 400 });
   }
+}
+
+async function getMockTopUpUser(): Promise<AppUser> {
+  const current = await getCurrentAppUser();
+  if (current) return current;
+
+  const cookieStore = await cookies();
+  const account = await getOrCreateCustodialAccount(
+    cookieStore.get(CUSTODIAL_ACCOUNT_COOKIE)?.value,
+  );
+
+  return {
+    id: account.userId,
+    walletAddress: "0x0000000000000000000000000000000000000000",
+    clerkId: null,
+    email: null,
+    displayName: "Guest",
+    imageUrl: null,
+    tempoVirtualAddress: null,
+    username: null,
+    avatar: null,
+    isCreator: false,
+    createdAt: new Date(),
+  };
 }

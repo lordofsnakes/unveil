@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import {
   Heart,
@@ -16,6 +15,7 @@ import { Avatar } from "./ui/Avatar";
 import { UnlockButton } from "./UnlockButton";
 import { ProofChip } from "./ProofChip";
 import { RevealMedia } from "./RevealMedia";
+import { useAppAuth } from "./useAppAuth";
 
 export type FeedPost = {
   id: string;
@@ -35,7 +35,7 @@ export function PostCard({
   isUnlocked?: boolean;
   priority?: boolean;
 }) {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const router = useRouter();
   const free = Number(post.unlockPrice) === 0;
   const [unlocked, setUnlocked] = useState(initialUnlocked ?? false);

@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { useAppAuth } from "./useAppAuth";
 
 function friendlyUnlockError(err: unknown): string {
   console.error("[unlock] failed:", err);
@@ -32,7 +32,7 @@ export function useUnlock(
   opts?: { onUnlock?: (signedUrl: string, settlementMs: number) => void },
 ) {
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAppAuth();
   const [state, setState] = useState<UnlockState>("locked");
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +59,17 @@ export function useUnlock(
       });
 
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          settlementError?: string;
+        };
+        if (body.error === "Settlement failed") {
+          throw new Error(
+            body.settlementError
+              ? `Tempo settlement failed: ${body.settlementError}`
+              : "Tempo settlement failed",
+          );
+        }
         throw new Error(body.error ?? "Unlock failed");
       }
 

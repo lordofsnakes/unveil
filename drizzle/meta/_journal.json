@@ -8,6 +8,20 @@
       "when": 1781827049430,
       "tag": "0000_eager_imperial_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781829872141,
+      "tag": "0001_fixed_james_howlett",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781863296430,
+      "tag": "0002_tempo_custodial_wallet_funding",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import {
   unauthorizedJson,
   UnauthorizedError,
 } from "@/lib/app-user";
+import { ensureUserTempoWallet } from "@/lib/custodial-wallets";
 
 export const runtime = "nodejs";
 
@@ -20,12 +21,14 @@ export async function GET() {
     if (err instanceof UnauthorizedError) return unauthorizedJson();
     throw err;
   }
+  const tempoWallet = await ensureUserTempoWallet(user.id);
   return Response.json({
     user: {
       username: user.username,
       avatar: user.avatar,
       isCreator: user.isCreator,
       walletAddress: user.walletAddress,
+      tempoWalletAddress: tempoWallet.address,
       displayName: user.displayName,
       email: user.email,
       imageUrl: user.imageUrl,
@@ -60,12 +63,14 @@ export async function PATCH(req: NextRequest) {
   try {
     const current = await requireCurrentAppUser();
     const user = await updateUserProfileById(current.id, patch);
+    const tempoWallet = await ensureUserTempoWallet(user.id);
     return Response.json({
       user: {
         username: user.username,
         avatar: user.avatar,
         isCreator: user.isCreator,
         walletAddress: user.walletAddress,
+        tempoWalletAddress: tempoWallet.address,
         displayName: user.displayName,
         email: user.email,
         imageUrl: user.imageUrl,

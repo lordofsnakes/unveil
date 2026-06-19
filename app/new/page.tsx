@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@clerk/nextjs";
 import { ArrowLeft, ImagePlus, X, Check, ShieldCheck } from "lucide-react";
 import { BottomNav } from "@/components/BottomNav";
+import { useAppAuth } from "@/components/useAppAuth";
 
 type Status = "idle" | "submitting" | "done";
 
 export default function NewPostPage() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);

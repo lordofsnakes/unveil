@@ -4,11 +4,13 @@ import { currentUser, auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { CUSTODIAL_ACCOUNT_COOKIE } from "./custodial";
+import { DEV_AUTH_COOKIE, DEV_USER_PROFILE, isValidDevAuthCookie } from "./dev-session";
 import {
   attachAnonymousCustodialAccountToClerk,
   type ClerkUserInput,
 } from "./db/queries";
 import type { users } from "./db/schema";
+import { ensureUserTempoWallet } from "./custodial-wallets";
 
 export type AppUser = typeof users.$inferSelect;
 
@@ -50,15 +52,36 @@ function clerkInput(
 }
 
 export async function getCurrentAppUser() {
+  const cookieStore = await cookies();
+  const cookieUserId = cookieStore.get(CUSTODIAL_ACCOUNT_COOKIE)?.value;
+
+  if (isValidDevAuthCookie(cookieStore.get(DEV_AUTH_COOKIE)?.value)) {
+    const user = await attachAnonymousCustodialAccountToClerk({
+      cookieUserId,
+      clerkUser: DEV_USER_PROFILE,
+    });
+    await ensureUserTempoWallet(user.id);
+    return user;
+  }
+
   const session = await auth();
   if (!session.userId) return null;
 
-  const [cookieStore, user] = await Promise.all([cookies(), currentUser()]);
-  const cookieUserId = cookieStore.get(CUSTODIAL_ACCOUNT_COOKIE)?.value;
-  return attachAnonymousCustodialAccountToClerk({
+  const user = await currentUser();
+  const appUser = await attachAnonymousCustodialAccountToClerk({
     cookieUserId,
     clerkUser: clerkInput(session.userId, user),
   });
+  await ensureUserTempoWallet(appUser.id);
+  return appUser;
+}
+
+export async function isCurrentAppUserAuthenticated() {
+  const cookieStore = await cookies();
+  if (isValidDevAuthCookie(cookieStore.get(DEV_AUTH_COOKIE)?.value)) return true;
+
+  const session = await auth();
+  return !!session.userId;
 }
 
 export async function requireCurrentAppUser() {

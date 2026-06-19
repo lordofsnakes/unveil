@@ -130,10 +130,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (
-    unlock.status === "unlocked" &&
-    process.env.ENABLE_USER_TEMPO_SETTLEMENT === "true"
-  ) {
+  const isPaidUnlock = Number(post.unlockPrice) > 0;
+  if (unlock.status === "unlocked" && isPaidUnlock) {
     const settlement = await settleUnlockWithCustodialWallet({
       userId: appUser.id,
       amountUsd: post.unlockPrice,
@@ -147,20 +145,21 @@ export async function POST(req: NextRequest) {
         txHash: unlock.txHash,
       });
       return jsonWithAccountCookie(
-        { error: `Settlement failed: ${settlement.reason}` },
+        {
+          error: "Settlement failed",
+          settlementError: settlement.reason,
+        },
         appUser.id,
         { status: 402 },
       );
     }
-    if (settlement.txHash) {
-      await finalizeCustodialUnlockPaymentHash({
-        userId: appUser.id,
-        postId,
-        internalTxHash: unlock.txHash,
-        paymentTxHash: settlement.txHash,
-      });
-      unlock.txHash = settlement.txHash;
-    }
+    await finalizeCustodialUnlockPaymentHash({
+      userId: appUser.id,
+      postId,
+      internalTxHash: unlock.txHash,
+      paymentTxHash: settlement.txHash,
+    });
+    unlock.txHash = settlement.txHash;
   }
 
   // 3. Issue a short-lived signed URL for the unblurred media.

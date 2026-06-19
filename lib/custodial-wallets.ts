@@ -4,10 +4,19 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { ALPHA_USD, STABLECOIN_DECIMALS, TEMPO_TESTNET } from "./constants";
+import {
+  completeTopUpDepositFunding,
+  markTopUpDepositFundingFailed,
+  normalizeMoney,
+  prepareTopUpDepositFunding,
+} from "./custodial";
 import { getDb } from "./db";
 import { custodialWallets } from "./db/schema";
+import { getPlatformClient } from "./tempo-server";
 
 const ENCRYPTION_SECRET_ENV = "CUSTODIAL_KEY_ENCRYPTION_SECRET";
+const MONEY_SCALE = 8;
+const USER_WALLET_FEE_RESERVE_USD = "0.10";
 
 function getEncryptionKey() {
   const raw = process.env[ENCRYPTION_SECRET_ENV];
@@ -84,8 +93,53 @@ export async function getOrCreateCustodialWallet(userId: string) {
   return created;
 }
 
+export async function ensureUserTempoWallet(userId: string) {
+  const wallet = await getOrCreateCustodialWallet(userId);
+  return { address: wallet.address };
+}
+
+export async function getTempoWalletAddress(userId: string) {
+  const wallet = await getDb().query.custodialWallets.findFirst({
+    where: eq(custodialWallets.userId, userId),
+    columns: { address: true },
+  });
+  return wallet?.address ?? null;
+}
+
+function moneyUnits(value: string) {
+  const normalized = normalizeMoney(value);
+  const [whole, fraction = ""] = normalized.split(".");
+  return (
+    BigInt(whole) * BigInt(10) ** BigInt(MONEY_SCALE) +
+    BigInt(fraction.padEnd(MONEY_SCALE, "0").slice(0, MONEY_SCALE))
+  );
+}
+
+function unitsToDecimal(units: bigint, scale: number) {
+  const base = BigInt(10) ** BigInt(scale);
+  const whole = units / base;
+  const fraction = (units % base).toString().padStart(scale, "0");
+  return `${whole}.${fraction}`;
+}
+
+export function addMoney(left: string, right: string) {
+  return unitsToDecimal(moneyUnits(left) + moneyUnits(right), MONEY_SCALE);
+}
+
+function stablecoinAmount(amountUsd: string) {
+  const divisor = BigInt(10) ** BigInt(MONEY_SCALE - STABLECOIN_DECIMALS);
+  const rounded = (moneyUnits(amountUsd) + divisor - BigInt(1)) / divisor;
+  return unitsToDecimal(rounded, STABLECOIN_DECIMALS);
+}
+
+export function userWalletFeeReserveUsd() {
+  return normalizeMoney(
+    process.env.USER_WALLET_FEE_RESERVE_USD ?? USER_WALLET_FEE_RESERVE_USD,
+  );
+}
+
 export type CustodialSettlementResult =
-  | { ok: true; txHash?: string; walletAddress: string }
+  | { ok: true; txHash: string; walletAddress: string }
   | { ok: false; reason: string };
 
 export async function settleUnlockWithCustodialWallet({
@@ -118,14 +172,18 @@ export async function settleUnlockWithCustodialWallet({
     });
     const result = await client.token.transferSync({
       to,
-      amount: parseUnits(amountUsd, STABLECOIN_DECIMALS),
+      amount: parseUnits(stablecoinAmount(amountUsd), STABLECOIN_DECIMALS),
       token: ALPHA_USD,
       memo,
     });
+    const txHash = result.receipt?.transactionHash;
+    if (!txHash) {
+      return { ok: false, reason: "Tempo receipt missing transaction hash" };
+    }
 
     return {
       ok: true,
-      txHash: result.receipt?.transactionHash,
+      txHash,
       walletAddress: wallet.address,
     };
   } catch (err) {
@@ -134,4 +192,120 @@ export async function settleUnlockWithCustodialWallet({
       reason: err instanceof Error ? err.message : "settlement failed",
     };
   }
+}
+
+export async function fundCustodialWalletFromPlatform({
+  userId,
+  amountUsd,
+  reference,
+}: {
+  userId: string;
+  amountUsd: string;
+  reference: string;
+}): Promise<CustodialSettlementResult> {
+  const client = getPlatformClient();
+  if (!client) return { ok: false, reason: "PLATFORM_PRIVATE_KEY not set" };
+
+  try {
+    const wallet = await getOrCreateCustodialWallet(userId);
+    const { pad, parseUnits, stringToHex } = await import("viem");
+    const memo = pad(stringToHex(`topup:${reference.slice(0, 12)}`), {
+      size: 32,
+    });
+    const result = await client.token.transferSync({
+      to: wallet.address as `0x${string}`,
+      amount: parseUnits(stablecoinAmount(amountUsd), STABLECOIN_DECIMALS),
+      token: ALPHA_USD,
+      memo,
+    });
+    const txHash = result.receipt?.transactionHash;
+    if (!txHash) {
+      return { ok: false, reason: "Tempo receipt missing transaction hash" };
+    }
+
+    return {
+      ok: true,
+      txHash,
+      walletAddress: wallet.address,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : "funding failed",
+    };
+  }
+}
+
+export async function finalizeTopUpDepositWithTempoFunding({
+  depositId,
+  provider,
+  providerTransactionId,
+  providerCustomerId,
+  providerPaymentMethodId,
+  amount,
+  currency,
+  rawProviderEvent,
+}: {
+  depositId: string;
+  provider: string;
+  providerTransactionId: string;
+  providerCustomerId?: string;
+  providerPaymentMethodId?: string;
+  amount?: string;
+  currency?: string;
+  rawProviderEvent?: Record<string, unknown>;
+}) {
+  const pending = await prepareTopUpDepositFunding({
+    depositId,
+    provider,
+    providerTransactionId,
+    providerCustomerId,
+    providerPaymentMethodId,
+    amount,
+    currency,
+    rawProviderEvent,
+  });
+
+  if (pending.status === "already_processed") return pending;
+
+  const wallet = await ensureUserTempoWallet(pending.userId);
+  const feeReserve = userWalletFeeReserveUsd();
+  const fundingAmount = addMoney(pending.amount, feeReserve);
+  const funding = await fundCustodialWalletFromPlatform({
+    userId: pending.userId,
+    amountUsd: fundingAmount,
+    reference: pending.depositId,
+  });
+
+  if (!funding.ok) {
+    await markTopUpDepositFundingFailed({
+      depositId: pending.depositId,
+      providerTransactionId,
+      destinationWalletAddress: wallet.address,
+      reason: funding.reason,
+      rawProviderEvent,
+    });
+    return {
+      status: "funding_failed" as const,
+      userId: pending.userId,
+      depositId: pending.depositId,
+      amount: pending.amount,
+      destinationWalletAddress: wallet.address,
+      reason: funding.reason,
+    };
+  }
+
+  const credited = await completeTopUpDepositFunding({
+    depositId: pending.depositId,
+    tempoFundingTxHash: funding.txHash,
+    destinationWalletAddress: funding.walletAddress,
+  });
+
+  return {
+    ...credited,
+    destinationWalletAddress: funding.walletAddress,
+    tempoFundingTxHash: funding.txHash,
+    fundedAmount: fundingAmount,
+    feeReserve,
+  };
 }

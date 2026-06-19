@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { Database, Sparkles } from "lucide-react";
 import { getFeed } from "@/lib/db/queries";
+import { isCurrentAppUserAuthenticated } from "@/lib/app-user";
 import { presignPrivateGet } from "@/lib/blob";
 import { PostCard, type FeedPost } from "@/components/PostCard";
 import { TopBar } from "@/components/TopBar";
@@ -37,7 +37,7 @@ async function loadFeed(): Promise<FeedPost[] | null> {
 }
 
 export default async function FeedPage() {
-  const { isAuthenticated } = await auth();
+  const isAuthenticated = await isCurrentAppUserAuthenticated();
   if (!isAuthenticated) return <Onboarding />;
 
   const posts = await loadFeed();

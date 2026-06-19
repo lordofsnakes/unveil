@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import { Home, Bell, Plus, MessageCircle } from "lucide-react";
 import { SettingsDrawer } from "./SettingsDrawer";
+import { useAppAuth } from "./useAppAuth";
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const [unread, setUnread] = useState(0);
   const [drawer, setDrawer] = useState(false);
 

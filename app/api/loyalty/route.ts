@@ -4,6 +4,7 @@ import {
   unauthorizedJson,
   UnauthorizedError,
 } from "@/lib/app-user";
+import { ensureUserTempoWallet } from "@/lib/custodial-wallets";
 
 export const runtime = "nodejs";
 
@@ -25,9 +26,11 @@ export async function GET() {
 
   const points = await getLoyaltyBalance(user.id);
   const stats = await getUserStats(user.id);
+  const tempoWallet = await ensureUserTempoWallet(user.id);
 
   return Response.json({
     wallet: user.walletAddress,
+    tempoWalletAddress: tempoWallet.address,
     points,
     stats,
     veilToken: process.env.NEXT_PUBLIC_VEIL_TOKEN_ADDRESS || null,

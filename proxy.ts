@@ -1,11 +1,11 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { DEV_AUTH_COOKIE, isValidDevAuthCookie } from "@/lib/dev-session";
 
 const isProtectedRoute = createRouteMatcher([
   "/new(.*)",
   "/messages(.*)",
   "/notifications(.*)",
   "/profile(.*)",
-  "/api/account(.*)",
   "/api/collection(.*)",
   "/api/loyalty(.*)",
   "/api/messages(.*)",
@@ -22,6 +22,7 @@ const isPublicApiRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   if (isPublicApiRoute(req)) return;
+  if (isValidDevAuthCookie(req.cookies.get(DEV_AUTH_COOKIE)?.value)) return;
   if (isProtectedRoute(req)) await auth.protect();
 });
 
