@@ -6,7 +6,9 @@ import {
   getPostsByCreator,
 } from "@/lib/db/queries";
 import { formatUsd } from "@/lib/constants";
-import { createJob, updateJob } from "@/lib/blur/jobs";
+import { createJob, getJob, updateJob } from "@/lib/blur/jobs";
+import { getDb } from "@/lib/db";
+import { posts } from "@/lib/db/schema";
 import {
   requireCurrentAppUser,
   unauthorizedJson,
@@ -47,18 +49,20 @@ export async function GET() {
 const MAX_BYTES = 25 * 1024 * 1024;
 
 /**
- * Creator upload. The UPLOAD side of the auto-blur flow (Option A):
+ * Creator upload.
+ *
+ * With autoBlur=true, this is the UPLOAD side of the auto-blur flow:
  *   1. store the raw media as a private object (this is what the blur pipeline reads)
  *   2. enqueue a `blur_jobs` row (status "uploaded") carrying the draft caption +
  *      price — the POST itself is created later, at approve, by publishJob()
  *   3. best-effort kick off detection IF Replicate is configured (never blocks)
  *
- * No post is created here: nothing is public until the creator approves the blur
- * (auto-blur PRD §11, fail-closed). The detection/compositing/publish ("blur
- * flow") is a separate workstream; this route just hands off a clean `uploaded`
- * job + raw blob + draft metadata in the shape `lib/blur` expects.
+ * With autoBlur=false, the raw upload is published directly and no blur job is
+ * created. For the blur path, nothing is public until the creator approves the
+ * preview (auto-blur PRD §11, fail-closed).
  *
  *   POST /api/posts  (multipart/form-data: file, title, price)
+ *   Set autoBlur=false to publish the upload directly without creating a blur job.
  */
 export async function POST(req: NextRequest) {
   let user;
@@ -79,6 +83,7 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const price = (form.get("price") as string | null)?.trim() ?? "";
+  const autoBlur = form.get("autoBlur") !== "false";
 
   if (!(file instanceof File) || file.size === 0) {
     return Response.json({ error: "Media file is required" }, { status: 400 });
@@ -125,6 +130,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (!autoBlur) {
+    const [post] = await getDb()
+      .insert(posts)
+      .values({
+        creatorId: creator.id,
+        title,
+        blurredPreviewUrl: rawBlobKey,
+        privateMediaKey: rawBlobKey,
+        unlockPrice: priceNum.toFixed(8),
+        mediaType,
+        accessMode: "full",
+        isPublished: true,
+      })
+      .returning({ id: posts.id });
+
+    return Response.json({
+      postId: post.id,
+      status: "published",
+    });
+  }
+
   // 2. Blur job (the handoff) carrying the draft caption + price. publishJob()
   //    creates the public post from these at approve time.
   const job = await createJob({ creatorId: creator.id, mediaType, rawBlobKey });
@@ -154,9 +180,10 @@ export async function POST(req: NextRequest) {
       console.error("blur pipeline trigger failed (will be reconciled):", err);
     }
   }
+  const latestJob = await getJob(job.id);
 
   return Response.json({
     jobId: job.id,
-    status: blurConfigured ? "processing" : "uploaded",
+    status: latestJob?.status ?? (blurConfigured ? "detecting" : "uploaded"),
   });
 }

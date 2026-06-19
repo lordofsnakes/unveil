@@ -29,6 +29,15 @@ export const STABLECOIN_DECIMALS = 6;
 /** Loyalty points awarded per post unlock. */
 export const POINTS_PER_UNLOCK = 10;
 
+/**
+ * Default unlock prices in stablecoin USD units, used as fallbacks when a
+ * creator's draft omits a price. A "full" post unlocks once for
+ * DEFAULT_POST_PRICE; a "partial" post charges DEFAULT_REVEAL_PRICE per region
+ * reveal (per tap), so it sits a notch lower.
+ */
+export const DEFAULT_POST_PRICE = "3.00";
+export const DEFAULT_REVEAL_PRICE = "1.50";
+
 /** Platform revenue cut (the rest goes to the creator). */
 export const PLATFORM_CUT = 0.1;
 export const CREATOR_CUT = 1 - PLATFORM_CUT;

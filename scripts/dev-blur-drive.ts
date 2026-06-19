@@ -50,8 +50,25 @@ async function main() {
     }
 
     const preds = job.predictionIds ?? {};
-    // Poll the most recent stage that has a prediction (latest first).
-    const stage = preds.cog ? "cog" : preds.track ? "track" : preds.detect ? "detect" : null;
+    // Poll the active stage implied by the job status. On retry, old prediction
+    // ids remain in the JSON map, so "latest available id" can accidentally
+    // advance a stale track result while a fresh detect is running.
+    const stage =
+      job.status === "detecting"
+        ? preds.cog
+          ? "cog"
+          : preds.detect
+            ? "detect"
+            : null
+        : job.status === "tracking" && preds.track
+          ? "track"
+          : preds.cog
+            ? "cog"
+            : preds.track
+              ? "track"
+              : preds.detect
+                ? "detect"
+                : null;
     const predId = stage ? preds[stage] : undefined;
 
     if (!stage || !predId) {

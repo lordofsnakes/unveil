@@ -2,11 +2,7 @@ import { NextRequest } from "next/server";
 import { upsertCreator } from "@/lib/db/queries";
 import { listThreads, getOrCreateThread } from "@/lib/db/messages";
 import { getOrCreateBotThreadForUser, getOrCreateBotUser } from "@/lib/bot";
-import {
-  requireCurrentAppUser,
-  unauthorizedJson,
-  UnauthorizedError,
-} from "@/lib/app-user";
+import { jsonError, requireAppUserForRoute } from "@/lib/api/route";
 
 export const runtime = "nodejs";
 
@@ -21,18 +17,13 @@ function handleFor(u: {
 
 /** GET /api/messages — the signed-in user's inbox. */
 export async function GET() {
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
 
   const bot = await getOrCreateBotUser();
-  await getOrCreateBotThreadForUser(user.id);
+  await getOrCreateBotThreadForUser(auth.user.id);
 
-  const rows = await listThreads(user.id);
+  const rows = await listThreads(auth.user.id);
   const threads = rows
     .map((t) => ({
       id: t.id,
@@ -58,19 +49,15 @@ export async function POST(req: NextRequest) {
   };
 
   if (!creatorWallet || !WALLET_RE.test(creatorWallet)) {
-    return Response.json({ error: "Invalid creator" }, { status: 400 });
+    return jsonError("Invalid creator", 400);
   }
 
-  let fan;
-  try {
-    fan = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
+  const { user: fan } = auth;
 
   if (fan.walletAddress.toLowerCase() === creatorWallet.toLowerCase()) {
-    return Response.json({ error: "Cannot message yourself" }, { status: 400 });
+    return jsonError("Cannot message yourself", 400);
   }
 
   const creator = await upsertCreator(creatorWallet);

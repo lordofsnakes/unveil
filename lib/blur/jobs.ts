@@ -1,5 +1,6 @@
 import { eq, and, inArray, lt, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { DEFAULT_POST_PRICE, DEFAULT_REVEAL_PRICE } from "@/lib/constants";
 import {
   blurJobs,
   blurWebhookEvents,
@@ -86,7 +87,6 @@ export async function publishJob(
 
     // Approve request overrides the draft captured at upload; fall back to it.
     const title = opts.title?.trim() || job.draftTitle || "Untitled";
-    const unlockPrice = opts.unlockPrice || job.draftPrice || "0.05";
 
     // Partial publishing requires crops produced during tracking. If the creator
     // asks for partial but there are none, fall back to a normal full-gate post.
@@ -95,6 +95,13 @@ export async function publishJob(
       opts.accessMode === "partial" &&
       job.mediaType === "video" &&
       patches.length > 0;
+
+    // Fall back to a sensible default if no price was drafted. A partial post
+    // charges per region reveal, so it defaults lower than a one-shot full post.
+    const unlockPrice =
+      opts.unlockPrice ||
+      job.draftPrice ||
+      (partial ? DEFAULT_REVEAL_PRICE : DEFAULT_POST_PRICE);
 
     const [post] = await tx
       .insert(posts)

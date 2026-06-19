@@ -84,12 +84,40 @@ function retryDelayMs(err: unknown): number {
   return 12_000; // 6/min low-credit window refills roughly every 10 seconds.
 }
 
-// Region prompt taxonomy — TUNE empirically (PRD open question #1).
-// Comma-joined for grounded_sam's `mask_prompt` and grounding-dino's `query`.
-export const DESIRED_REGIONS = ["breast", "genitalia", "buttocks", "nipple"];
+// Region prompt taxonomy for explicit/sexual exposure. Use concrete anatomy and
+// common synonyms so Grounding DINO has several chances to bind the correct
+// visual concept, while the downstream size guards reject broad person/body
+// boxes before they become partial-unlock regions. Comma-joined for
+// grounded_sam's `mask_prompt` and grounding-dino's `query`.
+export const DESIRED_REGIONS = [
+  "breast",
+  "breasts",
+  "nipple",
+  "nipples",
+  "areola",
+  "areolas",
+  "penis",
+  "erect penis",
+  "testicles",
+  "scrotum",
+  "vagina",
+  "vulva",
+  "labia",
+  "pubic area",
+  "genitals",
+  "genital area",
+  "crotch",
+  "anus",
+  "anal area",
+  "buttocks",
+  "bare buttocks",
+  "sex toy",
+  "dildo",
+  "vibrator",
+];
 
 // Regions we never want to blur, even if they overlap a positive match.
-export const NEGATIVE_REGIONS = ["face", "clothing"];
+export const NEGATIVE_REGIONS = ["face", "clothing", "background"];
 
 // grounded_sam returns a 4-element iterator in a FIXED order. Verified against
 // the model's default_example on 2026-06-18:

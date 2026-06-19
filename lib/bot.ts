@@ -1,8 +1,8 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "./db";
-import { getMessages, getOrCreateThread, sendMessage } from "./db/messages";
+import { getMessages, sendMessage } from "./db/messages";
 import { threads, users } from "./db/schema";
 
 export const BOT_WALLET_ADDRESS =
@@ -15,6 +15,7 @@ const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-5.5";
 const HISTORY_LIMIT = 24;
 const MAX_REPLY_CHARS = 420;
+const BOT_WELCOME_MESSAGE = "Hey you — I’m Vixen. Come say hi when you’re ready 💋";
 
 export type BotReplyResult =
   | { status: "sent"; messageId: string }
@@ -81,8 +82,28 @@ export async function getOrCreateBotUser() {
 }
 
 export async function getOrCreateBotThreadForUser(userId: string) {
+  const db = getDb();
   const bot = await getOrCreateBotUser();
-  return getOrCreateThread(bot.id, userId);
+  const [created] = await db
+    .insert(threads)
+    .values({ creatorId: bot.id, fanId: userId })
+    .onConflictDoNothing({ target: [threads.creatorId, threads.fanId] })
+    .returning();
+
+  if (created) {
+    await sendMessage({
+      threadId: created.id,
+      senderId: bot.id,
+      kind: "text",
+      body: BOT_WELCOME_MESSAGE,
+    });
+    return created;
+  }
+
+  const existing = await db.query.threads.findFirst({
+    where: and(eq(threads.creatorId, bot.id), eq(threads.fanId, userId)),
+  });
+  return existing!;
 }
 
 export async function isBotThread(thread: ThreadLike) {

@@ -3,15 +3,9 @@ import { getPost } from "@/lib/db/queries";
 import { getThreadFor, markThreadRead, sendMessage } from "@/lib/db/messages";
 import { buildConversationView } from "@/lib/messages-view";
 import { maybeReplyToBotThread } from "@/lib/bot";
-import {
-  requireCurrentAppUser,
-  unauthorizedJson,
-  UnauthorizedError,
-} from "@/lib/app-user";
+import { jsonError, requireAppUserForRoute } from "@/lib/api/route";
 
 export const runtime = "nodejs";
-
-type Params = { params: Promise<{ id: string }> };
 
 /**
  * GET /api/messages/[id] — a conversation. PPV messages are resolved
@@ -20,22 +14,20 @@ type Params = { params: Promise<{ id: string }> };
  * Used for client refreshes after a send — the initial load is server-rendered
  * by app/messages/[id]/page.tsx via the same builder.
  */
-export async function GET(_req: NextRequest, { params }: Params) {
-  const { id } = await params;
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+export async function GET(
+  _req: NextRequest,
+  ctx: RouteContext<"/api/messages/[id]">,
+) {
+  const { id } = await ctx.params;
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
 
-  const view = await buildConversationView(user.id, id);
-  if (!view) return Response.json({ error: "Thread not found" }, { status: 404 });
+  const view = await buildConversationView(auth.user.id, id);
+  if (!view) return jsonError("Thread not found", 404);
 
   // Clearing the unread badge is a side effect — don't make the response wait
   // on the write. `after` runs it once the response is on its way.
-  after(() => markThreadRead(id, user.id));
+  after(() => markThreadRead(id, auth.user.id));
 
   return Response.json(view);
 }
@@ -45,38 +37,34 @@ export async function GET(_req: NextRequest, { params }: Params) {
  * Body: { kind?: "text"|"ppv", body?, postId? }. PPV is creator-only and
  * must reference one of the creator's own posts (it reuses the unlock flow).
  */
-export async function POST(req: NextRequest, { params }: Params) {
-  const { id } = await params;
+export async function POST(
+  req: NextRequest,
+  ctx: RouteContext<"/api/messages/[id]">,
+) {
+  const { id } = await ctx.params;
   const { kind = "text", body, postId } = (await req.json()) as {
     kind?: "text" | "ppv";
     body?: string;
     postId?: string;
   };
 
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
+  const { user } = auth;
 
   const thread = await getThreadFor(user.id, id);
-  if (!thread) return Response.json({ error: "Thread not found" }, { status: 404 });
+  if (!thread) return jsonError("Thread not found", 404);
 
   if (kind === "ppv") {
     if (thread.creatorId !== user.id) {
-      return Response.json(
-        { error: "Only the creator can send locked content" },
-        { status: 403 },
-      );
+      return jsonError("Only the creator can send locked content", 403);
     }
     if (!postId) {
-      return Response.json({ error: "postId required for PPV" }, { status: 400 });
+      return jsonError("postId required for PPV", 400);
     }
     const post = await getPost(postId);
     if (!post || post.creatorId !== user.id) {
-      return Response.json({ error: "Not your post" }, { status: 400 });
+      return jsonError("Not your post", 400);
     }
     const msg = await sendMessage({
       threadId: id,
@@ -89,7 +77,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   const text = body?.trim();
-  if (!text) return Response.json({ error: "Empty message" }, { status: 400 });
+  if (!text) return jsonError("Empty message", 400);
 
   const msg = await sendMessage({
     threadId: id,

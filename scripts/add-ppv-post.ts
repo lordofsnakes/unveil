@@ -19,7 +19,7 @@ const DEV_USER_WALLET =
   process.env.DEV_USER_WALLET?.toLowerCase() ??
   "0x3333333333333333333333333333333333333333";
 const CREATOR_WALLET = "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1";
-const PRICES = ["0.05", "0.10", "0.25"];
+const PRICES = ["2.00", "3.00", "5.00"];
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL not set");

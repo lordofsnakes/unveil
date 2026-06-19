@@ -50,6 +50,13 @@
       "when": 1781875200000,
       "tag": "0006_mpp_call_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781875300000,
+      "tag": "0007_profile_bio",
+      "breakpoints": true
     }
   ]
 }

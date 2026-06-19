@@ -89,6 +89,7 @@ export const users = pgTable(
     tempoVirtualAddress: varchar("tempo_virtual_address", { length: 42 }).unique(),
     username: varchar("username", { length: 32 }).unique(),
     avatar: text("avatar"),
+    bio: text("bio"),
     isCreator: boolean("is_creator").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -113,8 +114,9 @@ export const posts = pgTable(
     blurredPreviewUrl: text("blurred_preview_url").notNull(),
     // Private full media — stored in Supabase Storage (private), URL/key only
     privateMediaKey: text("private_media_key").notNull(),
-    // Price in stablecoin units. e.g. "0.05" = 5 cents. For a "partial" post this
-    // is the single price charged for EACH region reveal (no per-region price).
+    // Price in stablecoin USD units. e.g. "3.00" = $3. A full post unlocks once
+    // for this price (~$2–5); a "partial" post charges it per region reveal
+    // (~$1–2, no per-region price).
     unlockPrice: decimal("unlock_price", { precision: 18, scale: 8 }).notNull(),
     mediaType: mediaTypeEnum("media_type").notNull().default("image"),
     accessMode: accessModeEnum("access_mode").notNull().default("full"),
@@ -337,7 +339,7 @@ export const callSessions = pgTable(
 
 // ── blur_jobs (auto-blur pipeline) ────────────────────────────────────────────
 // One row per asset moving through the detect → (track) → composite → review
-// state machine. Mirrors auto-blur/IMPLEMENTATION.md §4. Reuses the existing
+// state machine. Mirrors docs/auto-blur/implementation.md §4. Reuses the existing
 // `media_type` enum rather than defining a duplicate.
 export const blurStatusEnum = pgEnum("blur_status", [
   "uploaded",

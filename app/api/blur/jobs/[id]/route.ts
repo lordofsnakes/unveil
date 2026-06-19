@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getJob } from "@/lib/blur/jobs";
+import { presignPrivateGet } from "@/lib/blob";
 
 export const runtime = "nodejs";
 
@@ -11,12 +12,16 @@ export async function GET(
   const { id } = await ctx.params;
   const job = await getJob(id);
   if (!job) return Response.json({ error: "Job not found" }, { status: 404 });
+  const previewUrl = job.blurredBlobUrl
+    ? await presignPrivateGet(job.blurredBlobUrl, 300)
+    : null;
 
   // Status-poll shape — never leak blob keys/prediction ids to the client.
   return Response.json({
     id: job.id,
     status: job.status,
     mediaType: job.mediaType,
+    previewUrl,
     regions: job.regions,
     detectionConfidence: job.detectionConfidence,
     error: job.error,

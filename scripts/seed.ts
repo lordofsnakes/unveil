@@ -32,9 +32,9 @@ const DEV_USER_WALLET =
   "0x3333333333333333333333333333333333333333";
 
 const DEMO_POSTS = [
-  { name: "post1", title: "Golden hour rooftop", price: "0.05", seed: 7 },
-  { name: "post2", title: "Backstage, unfiltered", price: "0.10", seed: 13 },
-  { name: "post3", title: "The full set", price: "0.25", seed: 23 },
+  { name: "post1", title: "Golden hour rooftop", price: "2.00", seed: 7 },
+  { name: "post2", title: "Backstage, unfiltered", price: "3.50", seed: 13 },
+  { name: "post3", title: "The full set", price: "5.00", seed: 23 },
 ];
 
 const txHash = () => "0x" + randomBytes(32).toString("hex");
@@ -149,7 +149,9 @@ async function seed() {
         postId: id,
         paymentTxHash: hash,
         amountPaid: price,
-        settlementMs: 300 + Math.round(Number(price) * 1000),
+        // Sub-second settlement is the "proof of magic" — keep it fast and
+        // independent of price (which now runs $2–5).
+        settlementMs: 300 + Math.floor(Math.random() * 400),
       })
       .returning();
     await db.insert(loyaltyLedger).values({

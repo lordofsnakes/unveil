@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowUp, Check, CreditCard, Send } from "lucide-react";
 import { Avatar } from "./ui/Avatar";
 import { useAppAuth } from "./useAppAuth";
 
-const AMOUNT_OPTIONS = [1, "custom", 10, 20, 50, 100] as const;
+const AMOUNT_OPTIONS = [1, 10, 20, 50, 100, "custom"] as const;
 const DEFAULT_CUSTOM_AMOUNT = "5";
 
 type TipStage = "idle" | "sending" | "sent" | "error";
@@ -210,7 +210,7 @@ export function TipSheet({
                 return (
                   <label
                     key={option}
-                    className="tabular flex h-[50px] items-center justify-center gap-1 rounded-[14px] px-3 text-[17px] transition-colors"
+                    className="tabular flex h-[50px] flex-col items-center justify-center rounded-[14px] px-2 transition-colors"
                     style={
                       amountMode === "custom"
                         ? {
@@ -231,32 +231,41 @@ export function TipSheet({
                           }
                     }
                   >
-                    <span className="text-primary">$</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      pattern="[0-9]*[.]?[0-9]*"
-                      aria-label="Custom tip amount"
-                      value={customAmount}
-                      onFocus={() => {
-                        if (stage !== "idle") return;
-                        setAmountMode("custom");
-                      }}
-                      onChange={(e) => {
-                        if (stage !== "idle") return;
-                        setAmountMode("custom");
-                        setCustomAmount(sanitizeTipAmountInput(e.target.value));
-                        setError(null);
-                      }}
-                      onBlur={() => {
-                        if (customTipAmount != null) {
-                          setCustomAmount(formatTipAmount(customTipAmount));
-                        }
-                      }}
-                      disabled={stage !== "idle"}
-                      placeholder="Custom"
-                      className="min-w-0 flex-1 bg-transparent text-center text-[17px] font-[inherit] text-inherit outline-none placeholder:text-[color:var(--faint)] disabled:opacity-70"
-                    />
+                    <span className="text-[10px] leading-3 font-semibold text-[color:var(--faint)]">
+                      Custom
+                    </span>
+                    <span className="flex w-full items-center justify-center gap-0.5">
+                      <span className="text-primary text-[15px] leading-none">
+                        $
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*[.]?[0-9]*"
+                        aria-label="Custom tip amount"
+                        value={customAmount}
+                        onFocus={() => {
+                          if (stage !== "idle") return;
+                          setAmountMode("custom");
+                        }}
+                        onChange={(e) => {
+                          if (stage !== "idle") return;
+                          setAmountMode("custom");
+                          setCustomAmount(
+                            sanitizeTipAmountInput(e.target.value),
+                          );
+                          setError(null);
+                        }}
+                        onBlur={() => {
+                          if (customTipAmount != null) {
+                            setCustomAmount(formatTipAmount(customTipAmount));
+                          }
+                        }}
+                        disabled={stage !== "idle"}
+                        placeholder="0"
+                        className="min-w-0 max-w-[58px] bg-transparent text-center text-[16px] font-[inherit] leading-none text-inherit outline-none placeholder:text-[color:var(--faint)] disabled:opacity-70"
+                      />
+                    </span>
                   </label>
                 );
               }

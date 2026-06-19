@@ -3,7 +3,7 @@
 import { Share2, Flame, Trophy } from "lucide-react";
 
 /**
- * Robinhood/Binance-PnL-style shareable card — the viral wow (DESIGN_PRD §5.3).
+ * Robinhood/Binance-PnL-style shareable card — the viral wow (docs/design-prd.md §5.3).
  * The one place gold + gradient + glow combine. Mirrored server-side via
  * @vercel/og for share-to-X; this is the in-app preview.
  */

@@ -41,9 +41,9 @@ const CREATORS: MockCreator[] = [
     username: "luna_after_dark",
     displayName: "Luna After Dark",
     posts: [
-      { title: "Golden hour rooftop", price: "0.05", seed: 7 },
-      { title: "Midnight in the city", price: "0.10", seed: 12 },
-      { title: "The full set", price: "0.25", seed: 23 },
+      { title: "Golden hour rooftop", price: "2.00", seed: 7 },
+      { title: "Midnight in the city", price: "3.50", seed: 12 },
+      { title: "The full set", price: "5.00", seed: 23 },
     ],
   },
   {
@@ -51,9 +51,9 @@ const CREATORS: MockCreator[] = [
     username: "velvet_room",
     displayName: "The Velvet Room",
     posts: [
-      { title: "Backstage, unfiltered", price: "0.08", seed: 31 },
-      { title: "Velvet & candlelight", price: "0.15", seed: 44 },
-      { title: "After the show", price: "0.30", seed: 58 },
+      { title: "Backstage, unfiltered", price: "2.50", seed: 31 },
+      { title: "Velvet & candlelight", price: "4.00", seed: 44 },
+      { title: "After the show", price: "5.00", seed: 58 },
     ],
   },
   {
@@ -62,8 +62,8 @@ const CREATORS: MockCreator[] = [
     displayName: "Mia Unfiltered",
     posts: [
       { title: "Lazy Sunday morning", price: "0", seed: 5 },
-      { title: "Coffee & quiet", price: "0.06", seed: 17 },
-      { title: "Just for you", price: "0.20", seed: 29 },
+      { title: "Coffee & quiet", price: "2.00", seed: 17 },
+      { title: "Just for you", price: "4.50", seed: 29 },
     ],
   },
   {
@@ -71,9 +71,9 @@ const CREATORS: MockCreator[] = [
     username: "nightshade",
     displayName: "Nightshade",
     posts: [
-      { title: "Neon nights", price: "0.12", seed: 63 },
-      { title: "Shadow play", price: "0.18", seed: 71 },
-      { title: "Locked & loaded", price: "0.50", seed: 88 },
+      { title: "Neon nights", price: "3.00", seed: 63 },
+      { title: "Shadow play", price: "4.00", seed: 71 },
+      { title: "Locked & loaded", price: "5.00", seed: 88 },
     ],
   },
   {
@@ -82,8 +82,8 @@ const CREATORS: MockCreator[] = [
     displayName: "Coral Bay",
     posts: [
       { title: "Beach day tease", price: "0", seed: 41 },
-      { title: "Sunset swim", price: "0.07", seed: 52 },
-      { title: "Private island", price: "0.22", seed: 67 },
+      { title: "Sunset swim", price: "2.50", seed: 52 },
+      { title: "Private island", price: "4.00", seed: 67 },
     ],
   },
 ];
@@ -211,7 +211,9 @@ async function reseed() {
         postId: p.id,
         paymentTxHash: hash,
         amountPaid: p.price,
-        settlementMs: 300 + Math.round(Number(p.price) * 1000),
+        // Sub-second settlement is the "proof of magic" — keep it fast and
+        // independent of price (which now runs $2–5).
+        settlementMs: 300 + Math.floor(Math.random() * 400),
       })
       .onConflictDoNothing()
       .returning();

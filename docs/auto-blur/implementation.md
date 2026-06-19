@@ -65,13 +65,15 @@ npm install -D @types/fluent-ffmpeg
 All auto-blur code is namespaced so it stays isolated and easy to lift into the parent app or a separate service later.
 
 ```
+docs/auto-blur/
+  prd.md                          ← spec (done)
+  implementation.md               ← this file
+  cog-readme.md                   ← Cog setup notes
+
 auto-blur/
-  PRD.md                          ← spec (done)
-  IMPLEMENTATION.md               ← this file
   cog/                            ← Strategy B (P5) — custom Replicate model
     cog.yaml
     predict.py
-    README.md
 
 lib/blur/
   replicate.ts                    ← Replicate client singleton + MODELS registry
@@ -225,9 +227,15 @@ export const MODELS = {
   nsfwVideo: { ref: 'lucataco/nsfw_video_detection' as const },
 } as const
 
-// Region prompt taxonomy — TUNE empirically (PRD open question #1).
+// Region prompt taxonomy — explicit/sexual anatomy + common object synonyms.
 // Comma-separated for grounding-dino's `query`; comma-joined for grounded_sam's `mask_prompt`.
-export const DESIRED_REGIONS = ['breast', 'genitalia', 'buttocks', 'nipple']
+export const DESIRED_REGIONS = [
+  'breast', 'breasts', 'nipple', 'nipples', 'areola', 'areolas',
+  'penis', 'erect penis', 'testicles', 'scrotum',
+  'vagina', 'vulva', 'labia', 'pubic area', 'genitals', 'genital area', 'crotch',
+  'anus', 'anal area', 'buttocks', 'bare buttocks',
+  'sex toy', 'dildo', 'vibrator',
+]
 ```
 
 **Calling conventions (verified):**
@@ -624,7 +632,9 @@ class Predictor(BasePredictor):
     def predict(
         self,
         video: Path = Input(description="Source clip"),
-        regions: str = Input(default="breast,genitalia,buttocks,nipple"),
+        regions: str = Input(
+            default="breast,breasts,nipple,nipples,areola,areolas,penis,erect penis,testicles,scrotum,vagina,vulva,labia,pubic area,genitals,genital area,crotch,anus,anal area,buttocks,bare buttocks,sex toy,dildo,vibrator"
+        ),
         box_threshold: float = Input(default=0.3),
         dilation: int = Input(default=12),
         blur_strength: int = Input(default=30),

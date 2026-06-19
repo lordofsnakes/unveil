@@ -1,22 +1,13 @@
 import { listBookmarks } from "@/lib/db/social";
-import {
-  requireCurrentAppUser,
-  unauthorizedJson,
-  UnauthorizedError,
-} from "@/lib/app-user";
+import { requireAppUserForRoute } from "@/lib/api/route";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
 
-  const rows = await listBookmarks(user.id);
+  const rows = await listBookmarks(auth.user.id);
   return Response.json({
     items: rows.map((r) => ({
       id: r.id,

@@ -559,7 +559,18 @@
       <!-- preset chips -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;max-width:320px">
         <sc-for list="{{ tipAmounts }}" as="t" hint-placeholder-count="6">
-          <button onClick="{{ t.onPick }}" style-active="transform:scale(.95)" style="height:50px;border-radius:14px;font-family:'Geist Mono',monospace;font-size:17px;cursor:pointer;transition:transform .12s ease,background .15s ease;{{ t.chipStyle }}">{{ t.label }}</button>
+          <sc-if value="{{ t.isCustom }}" hint-placeholder-val="{{ false }}">
+            <label style="height:50px;border-radius:14px;font-family:'Geist Mono',monospace;cursor:text;transition:background .15s ease;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 8px;{{ t.chipStyle }}">
+              <span style="font-size:10px;line-height:12px;color:var(--faint);font-weight:600">Custom</span>
+              <span style="display:flex;width:100%;align-items:center;justify-content:center;gap:2px">
+                <span style="color:var(--primary);font-size:15px;line-height:1">$</span>
+                <input value="{{ tipCustom }}" onFocus="{{ onTipCustomFocus }}" onInput="{{ onTipCustom }}" placeholder="0" style="min-width:0;max-width:58px;background:transparent;border:none;outline:none;color:inherit;font:inherit;font-size:16px;line-height:1;text-align:center" />
+              </span>
+            </label>
+          </sc-if>
+          <sc-if value="{{ t.isPreset }}" hint-placeholder-val="{{ true }}">
+            <button onClick="{{ t.onPick }}" style-active="transform:scale(.95)" style="height:50px;border-radius:14px;font-family:'Geist Mono',monospace;font-size:17px;cursor:pointer;transition:transform .12s ease,background .15s ease;{{ t.chipStyle }}">{{ t.label }}</button>
+          </sc-if>
         </sc-for>
       </div>
 
@@ -572,6 +583,9 @@
       </div>
       <sc-if value="{{ tipTooLow }}" hint-placeholder-val="{{ false }}">
         <div style="margin-top:8px;color:var(--primary);font-size:12.5px;font-weight:600">Not enough balance for this tip</div>
+      </sc-if>
+      <sc-if value="{{ tipInvalid }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:8px;color:var(--primary);font-size:12.5px;font-weight:600">Enter a custom tip amount</div>
       </sc-if>
     </div>
 
@@ -650,7 +664,7 @@
 class Component extends DCLogic {
   state = { screen:'onboarding', drawerOpen:false, theme:'dark', unlocked:{}, email:'', password:'', showPw:false, notifFilter:'All', reviewStage:'idle', reviewType:'image', search:'', autoBlur:false,
     balance:42.50, balanceBump:0, liked:{}, saved:{}, burst:{}, commentLikes:{}, commentText:'',
-    tipPost:null, tipAmount:5, tipMsg:'', tipStage:'idle', activePost:null };
+    tipPost:null, tipMode:'custom', tipCustom:'5', tipAmount:5, tipMsg:'', tipStage:'idle', activePost:null };
 
   onEmail = (e) => this.setState({ email: e.target.value });
   onPassword = (e) => this.setState({ password: e.target.value });
@@ -679,11 +693,31 @@ class Component extends DCLogic {
   onCommentText = (e) => this.setState({ commentText: e.target.value });
   openComments = (post) => this.setState({ screen:'comments', activePost: post, drawerOpen:false });
 
-  openTip = (post) => this.setState({ screen:'tip', tipPost: post, tipAmount: 5, tipMsg:'', tipStage:'idle', drawerOpen:false });
-  setTip = (amt) => { if (this.state.tipStage !== 'idle') return; this.setState({ tipAmount: amt }); if (navigator.vibrate) navigator.vibrate(4); };
+  sanitizeTipCustom = (value) => {
+    const cleaned = String(value || '').replace(/[^\d.]/g, '');
+    const dot = cleaned.indexOf('.');
+    if (dot === -1) return cleaned.slice(0, 6);
+    return cleaned.slice(0, dot).slice(0, 6) + '.' + cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+  };
+  parseTipCustom = (value) => {
+    const raw = String(value || '').trim();
+    if (!/^\d{0,6}(\.\d{1,2})?$/.test(raw)) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  formatTipAmount = (amt) => Number.isInteger(amt) ? '' + amt : amt.toFixed(2).replace(/0$/, '');
+  openTip = (post) => this.setState({ screen:'tip', tipPost: post, tipMode:'custom', tipCustom:'5', tipAmount: 5, tipMsg:'', tipStage:'idle', drawerOpen:false });
+  setTip = (amt) => { if (this.state.tipStage !== 'idle') return; this.setState({ tipMode:'preset', tipAmount: amt }); if (navigator.vibrate) navigator.vibrate(4); };
+  onTipCustomFocus = () => { if (this.state.tipStage !== 'idle') return; this.setState(s => ({ tipMode:'custom', tipAmount: this.parseTipCustom(s.tipCustom) })); };
+  onTipCustom = (e) => {
+    if (this.state.tipStage !== 'idle') return;
+    const tipCustom = this.sanitizeTipCustom(e.target.value);
+    this.setState({ tipMode:'custom', tipCustom, tipAmount: this.parseTipCustom(tipCustom) });
+  };
   onTipMsg = (e) => this.setState({ tipMsg: e.target.value });
   sendTip = () => {
     if (this.state.tipStage !== 'idle') return;
+    if (this.state.tipAmount <= 0) return;
     if (this.state.tipAmount > this.state.balance) return;
     this.setState({ tipStage:'sending' });
     if (navigator.vibrate) navigator.vibrate(8);
@@ -950,20 +984,27 @@ class Component extends DCLogic {
     const tp = this.state.tipPost || POSTS[0];
     const TST = this.state.tipStage;
     const tipAmt = this.state.tipAmount;
-    const tipAmounts = [1, 5, 10, 20, 50, 100].map(a => ({
-      val: a, label: '$' + a,
+    const tipAmountLabel = tipAmt > 0 ? this.formatTipAmount(tipAmt) : '0';
+    const tipAmounts = [1, 10, 20, 50, 100, 'custom'].map(a => a === 'custom' ? ({
+      val: a, isCustom: true, isPreset: false,
+      chipStyle: this.state.tipMode === 'custom'
+        ? 'background:var(--tint);border:1px solid rgba(194,20,59,.4);color:var(--text);font-weight:700'
+        : 'background:var(--surface-2);border:1px solid var(--hairline);color:var(--muted);font-weight:600',
+    }) : ({
+      val: a, label: '$' + a, isCustom: false, isPreset: true,
       onPick: () => this.setTip(a),
-      chipStyle: a === tipAmt
+      chipStyle: this.state.tipMode === 'preset' && a === tipAmt
         ? 'background:var(--tint);border:1px solid rgba(194,20,59,.4);color:var(--text);font-weight:700'
         : 'background:var(--surface-2);border:1px solid var(--hairline);color:var(--muted);font-weight:600',
     }));
-    const tipTooLow = tipAmt > this.state.balance;
+    const tipInvalid = tipAmt <= 0;
+    const tipTooLow = !tipInvalid && tipAmt > this.state.balance;
     const tipIdle = TST === 'idle';
     const tipSending = TST === 'sending';
     const tipSent = TST === 'sent';
-    const tipBtnBg = tipTooLow ? 'var(--surface-3)' : 'var(--primary)';
-    const tipBtnColor = tipTooLow ? 'var(--faint)' : '#fff';
-    const tipBtnShadow = tipTooLow ? 'none' : '0 8px 28px var(--glow)';
+    const tipBtnBg = (tipTooLow || tipInvalid) ? 'var(--surface-3)' : 'var(--primary)';
+    const tipBtnColor = (tipTooLow || tipInvalid) ? 'var(--faint)' : '#fff';
+    const tipBtnShadow = (tipTooLow || tipInvalid) ? 'none' : '0 8px 28px var(--glow)';
     const fmtMoney = (n) => '$' + n.toFixed(2);
 
     const s = this.state.screen;
@@ -994,11 +1035,12 @@ class Component extends DCLogic {
       cmtPost: ap, cmtCaption: ap.caption, cmtName: ap.name, cmtHandle: ap.handle, cmtAvatar: ap.avatar, cmtTime: ap.time,
       // tip
       tipName: tp.name, tipHandle: tp.handle, tipAvatar: tp.avatar,
-      tipAmounts, tipAmountLabel: '' + tipAmt, tipMsg: this.state.tipMsg, onTipMsg: this.onTipMsg,
-      tipBalanceLabel: fmtMoney(this.state.balance), tipTooLow,
+      tipAmounts, tipAmountLabel, tipCustom: this.state.tipCustom,
+      tipMsg: this.state.tipMsg, onTipMsg: this.onTipMsg, onTipCustom: this.onTipCustom, onTipCustomFocus: this.onTipCustomFocus,
+      tipBalanceLabel: fmtMoney(this.state.balance), tipTooLow, tipInvalid,
       tipIdle, tipSending, tipSent,
-      tipBtnBg, tipBtnColor, tipBtnShadow, tipSendLabel: 'Send $' + tipAmt + ' tip',
-      tipSentLabel: 'Sent $' + tipAmt + ' to ' + tp.handle,
+      tipBtnBg, tipBtnColor, tipBtnShadow, tipSendLabel: tipInvalid ? 'Send tip' : 'Send $' + tipAmountLabel + ' tip',
+      tipSentLabel: 'Sent $' + tipAmountLabel + ' to ' + tp.handle,
       sendTip: this.sendTip,
       backFromTip: () => this.go(tipSent ? 'feed' : 'feed'),
       backFromComments: () => this.go('feed'),

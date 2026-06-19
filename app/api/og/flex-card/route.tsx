@@ -13,7 +13,7 @@ const FAINT = "#6e666b";
 const GOLD = "#e8b339";
 
 /**
- * Flex Card share image (DESIGN_PRD §5.3 / IMPLEMENTATION §11.2). A
+ * Flex Card share image (docs/design-prd.md §5.3). A
  * Robinhood/Binance-PnL-style card for share-to-X/Telegram link previews.
  *
  *   GET /api/og/flex-card?wallet=0x...

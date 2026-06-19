@@ -1,4 +1,3 @@
-import { randomBytes } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import {
@@ -12,6 +11,17 @@ import {
   users,
 } from "./db/schema";
 import { POINTS_PER_UNLOCK } from "./constants";
+import {
+  internalAddress,
+  internalReference,
+  internalTxHash,
+} from "./custodial/identifiers";
+import {
+  mppCallReserveReference,
+  mppCallReserveReferenceLike,
+  mppCallSettleReference,
+} from "./custodial/mpp-call-references";
+export { normalizeMoney } from "./custodial/money";
 
 export const CUSTODIAL_ACCOUNT_COOKIE = "veil_account";
 
@@ -63,32 +73,6 @@ export type TopUpFundingPreparation =
       destinationWalletAddress?: string | null;
       tempoFundingTxHash?: string | null;
     };
-
-function internalAddress() {
-  return `0x${randomBytes(20).toString("hex")}`;
-}
-
-function internalReference(prefix: string) {
-  return `${prefix}_${randomBytes(16).toString("hex")}`;
-}
-
-function internalTxHash() {
-  return `0x${randomBytes(32).toString("hex")}`;
-}
-
-export function normalizeMoney(input: unknown): string {
-  const raw = typeof input === "string" ? input.trim() : String(input ?? "");
-  if (!/^\d{1,6}(\.\d{1,8})?$/.test(raw)) {
-    throw new Error("Invalid amount");
-  }
-
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("Invalid amount");
-  }
-
-  return value.toFixed(8);
-}
 
 export async function createCustodialAccount(): Promise<CustodialAccount> {
   return getDb().transaction(async (tx) => {
@@ -1068,18 +1052,6 @@ export type MppCallSettleResult =
     }
   | { status: "nothing_to_settle"; balance: string; escrowedBalance: string }
   | { status: "self_call" };
-
-function mppCallReserveReference(threadId: string, callId: string, tick: number) {
-  return `mpp-call:${threadId}:${callId}:reserve:${tick}`;
-}
-
-function mppCallSettleReference(threadId: string, callId: string) {
-  return `mpp-call:${threadId}:${callId}:settle`;
-}
-
-function mppCallReserveReferenceLike(threadId: string, callId: string) {
-  return `${mppCallReserveReference(threadId, callId, 0).replace(/:0$/, "")}:%`;
-}
 
 type DbTransaction = Parameters<
   Parameters<ReturnType<typeof getDb>["transaction"]>[0]

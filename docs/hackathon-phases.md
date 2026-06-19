@@ -32,5 +32,5 @@ Required env:
 
 ## Post-Hackathon P0 - Auto-Blur Image PoC
 
-- Start the Replicate image pipeline described in `auto-blur/PRD.md`.
+- Start the Replicate image pipeline described in `docs/auto-blur/prd.md`.
 - Keep auto-blur separate from the hackathon-critical MPP unlock path.

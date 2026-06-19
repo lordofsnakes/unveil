@@ -48,16 +48,16 @@ const TARGETS: Target[] = [
     label: "kerem.eskici@yahoo.com",
     lookup: { by: "email", value: "kerem.eskici@yahoo.com" },
     posts: [
-      { title: "Sunlit balcony", price: "0.12", seed: 101, minutesAgo: 3 * 24 * 60 },
-      { title: "Off-duty, off-guard", price: "0.20", seed: 137, minutesAgo: 36 * 60 },
+      { title: "Sunlit balcony", price: "3.00", seed: 101, minutesAgo: 3 * 24 * 60 },
+      { title: "Off-duty, off-guard", price: "4.00", seed: 137, minutesAgo: 36 * 60 },
     ],
   },
   {
     label: "dev user",
     lookup: { by: "clerkId", value: "dev_default_user" },
     posts: [
-      { title: "Studio test shoot", price: "0.10", seed: 211, minutesAgo: 2 * 24 * 60 },
-      { title: "Late night edit", price: "0.25", seed: 233, minutesAgo: 20 * 60 },
+      { title: "Studio test shoot", price: "2.50", seed: 211, minutesAgo: 2 * 24 * 60 },
+      { title: "Late night edit", price: "4.50", seed: 233, minutesAgo: 20 * 60 },
     ],
   },
 ];
@@ -183,7 +183,9 @@ async function seedFor(target: { id: string; username: string | null }, t: Targe
         postId: u.post.id,
         paymentTxHash: txHash(),
         amountPaid: u.post.price,
-        settlementMs: 300 + Math.round(Number(u.post.price) * 1000),
+        // Sub-second settlement is the "proof of magic" — keep it fast and
+        // independent of price (which now runs $2–5).
+        settlementMs: 300 + Math.floor(Math.random() * 400),
         unlockedAt: ago(u.minutesAgo),
       })
       .onConflictDoNothing();

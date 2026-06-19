@@ -18,5 +18,5 @@ The design medium is **HTML/CSS/JS** — these are prototypes, not production co
 
 ## Bundle contents
 
-- `tempo-onlyfans/README.md` — this file
+- `docs/tempo-onlyfans/readme.md` — this file
 - `tempo-onlyfans/project/` — the `Tempo Onlyfans` project files (HTML prototypes, assets, components)

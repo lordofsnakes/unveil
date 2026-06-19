@@ -26,7 +26,7 @@ import torch
 from cog import BasePredictor, BaseModel, Input, Path
 
 # Region taxonomy — keep in sync with lib/blur/replicate.ts DESIRED_REGIONS.
-DEFAULT_REGIONS = "breast,genitalia,buttocks,nipple"
+DEFAULT_REGIONS = "breast,breasts,nipple,nipples,areola,areolas,penis,erect penis,testicles,scrotum,vagina,vulva,labia,pubic area,genitals,genital area,crotch,anus,anal area,buttocks,bare buttocks,sex toy,dildo,vibrator"
 SAM2_WEIGHTS = "/weights/sam2_hiera_large.pt"
 SAM2_CFG = "sam2_hiera_l.yaml"
 GDINO_WEIGHTS = "/weights/groundingdino_swint_ogc.pth"

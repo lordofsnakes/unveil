@@ -70,7 +70,7 @@ Note: the CLI script intentionally does not import `lib/custodial-wallets.ts`, b
 ### Docs And Env
 
 - Added `docs/tempo-custodial-wallet-migration.md` with architecture, sequence diagrams, env, migration runbook, failure behavior, and manual checklist.
-- Updated `.env.example` and `README.md`.
+- Updated `.env.example` and `docs/project-readme.md`.
 - Added local-only `.env.local` values during this chat:
   - `CUSTODIAL_KEY_ENCRYPTION_SECRET=<base64 32-byte key>`
   - `USER_WALLET_FEE_RESERVE_USD=0.10`
@@ -208,5 +208,5 @@ Notable files from this migration:
 - `app/payment-cards/page.tsx`
 - `components/useUnlock.ts`
 - `drizzle/0002_tempo_custodial_wallet_funding.sql`
-- `README.md`
+- `docs/project-readme.md`
 - `.env.example`

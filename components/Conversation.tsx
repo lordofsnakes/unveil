@@ -22,6 +22,7 @@ import type {
   ConversationPpvMsg,
   ConversationThread,
 } from "@/lib/messages-view";
+import { formatDuration, optimisticId } from "@/components/conversation/utils";
 
 type MyPost = {
   id: string;
@@ -30,20 +31,6 @@ type MyPost = {
   mediaType: "image" | "video";
   previewUrl: string | null;
 };
-
-function formatDuration(seconds: number) {
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(
-    seconds % 60,
-  ).padStart(2, "0")}`;
-}
-
-function optimisticId() {
-  const random =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  return `optimistic-${random}`;
-}
 
 /**
  * The interactive conversation view. Initial thread + messages are rendered on

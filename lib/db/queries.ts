@@ -1,5 +1,4 @@
-import { randomBytes } from "node:crypto";
-import { eq, and, asc, desc, inArray, ne, or, sql, isNull } from "drizzle-orm";
+import { eq, and, asc, desc, inArray, ne, sql, isNull } from "drizzle-orm";
 import { getDb } from "./index";
 import {
   users,
@@ -13,73 +12,19 @@ import {
   comments,
   follows,
 } from "./schema";
-
-export type ClerkUserInput = {
-  clerkId: string;
-  email?: string | null;
-  displayName?: string | null;
-  imageUrl?: string | null;
-};
-
-function internalAddress() {
-  return `0x${randomBytes(20).toString("hex")}`;
-}
-
-function clerkProfile(input: ClerkUserInput): Partial<typeof users.$inferInsert> {
-  const displayName = input.displayName?.trim() || null;
-  const imageUrl = input.imageUrl?.trim() || null;
-  return {
-    clerkId: input.clerkId,
-    email: input.email?.trim().toLowerCase() || null,
-    displayName,
-    imageUrl,
-  };
-}
-
-function usernameBase(input: ClerkUserInput) {
-  const source =
-    input.displayName?.trim() || input.email?.split("@")[0]?.trim() || null;
-  if (!source) return null;
-
-  const base = source
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  if (!base) return null;
-  return base.length >= 3 ? base.slice(0, 20) : base.padEnd(3, "_");
-}
-
-const DEV_UNVEIL_TEST_VIDEO_KEY =
-  "blur-jobs/e21b3b6a-c292-4bdf-a8ae-087f17059b3c/blurred.mp4";
-const DEV_UNVEIL_TEST_POST_ID = "faf412aa-2767-4289-8508-0d2079506e5c";
-
-function hideOwnPostsExceptDevUnveilTestPost(excludeCreatorId: string) {
-  const ownPostFilter = ne(posts.creatorId, excludeCreatorId);
-  if (process.env.NODE_ENV !== "development") return ownPostFilter;
-
-  // Keep the processed test video visible in the dev feed so the dev account can
-  // repeatedly exercise the per-region unveil flow, even when it owns the post.
-  return or(ownPostFilter, eq(posts.blurredPreviewUrl, DEV_UNVEIL_TEST_VIDEO_KEY));
-}
-
-function shouldResetDevUnveilFixture(postId: string) {
-  return process.env.NODE_ENV === "development" && postId === DEV_UNVEIL_TEST_POST_ID;
-}
-
-function usernameCandidate(base: string, attempt: number) {
-  if (attempt === 0) return base.slice(0, 20);
-  const suffix = String(attempt + 1);
-  return `${base.slice(0, 20 - suffix.length)}${suffix}`;
-}
-
-function isUniqueViolation(err: unknown) {
-  const error = err as { code?: string; cause?: { code?: string } };
-  return error.code === "23505" || error.cause?.code === "23505";
-}
+import {
+  clerkProfile,
+  internalAddress,
+  isUniqueViolation,
+  usernameBase,
+  usernameCandidate,
+  type ClerkUserInput,
+} from "./user-profile";
+import {
+  hideOwnPostsExceptDevUnveilTestPost,
+  shouldResetDevUnveilFixture,
+} from "./feed-policy";
+export type { ClerkUserInput } from "./user-profile";
 
 async function addGeneratedUsernameIfMissing(
   user: typeof users.$inferSelect,
@@ -455,12 +400,13 @@ export async function updateUserProfile(
 
 export async function updateUserProfileById(
   userId: string,
-  patch: { username?: string | null; avatar?: string | null },
+  patch: { username?: string | null; avatar?: string | null; bio?: string | null },
 ) {
   const db = getDb();
   const set: Partial<typeof users.$inferInsert> = {};
   if (patch.username !== undefined) set.username = patch.username;
   if (patch.avatar !== undefined) set.avatar = patch.avatar;
+  if (patch.bio !== undefined) set.bio = patch.bio;
   const [user] = await db
     .update(users)
     .set(set)

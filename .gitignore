@@ -43,7 +43,7 @@ next-env.d.ts
 .claude
 NSFW.png
 test.mp4
-
+.design 
 # auto-blur: local test artifacts (raw + API-returned NSFW derivatives)
 /auto-blur/api-output/
 /auto-blur/*.mp4

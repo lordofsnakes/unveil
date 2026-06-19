@@ -102,6 +102,7 @@ async function getMockTopUpUser(): Promise<AppUser> {
     tempoVirtualAddress: null,
     username: null,
     avatar: null,
+    bio: null,
     isCreator: false,
     createdAt: new Date(),
   };

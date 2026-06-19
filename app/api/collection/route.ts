@@ -1,10 +1,6 @@
 import { getUnlockedPosts } from "@/lib/db/queries";
 import { presignPrivateGet } from "@/lib/blob";
-import {
-  requireCurrentAppUser,
-  unauthorizedJson,
-  UnauthorizedError,
-} from "@/lib/app-user";
+import { requireAppUserForRoute } from "@/lib/api/route";
 
 export const runtime = "nodejs";
 
@@ -14,15 +10,10 @@ export const runtime = "nodejs";
  * grant, so the collection shows what they own, not the public preview.
  */
 export async function GET() {
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
 
-  const rows = await getUnlockedPosts(user.id);
+  const rows = await getUnlockedPosts(auth.user.id);
   const items = await Promise.all(
     rows.map(async (r) => ({
       postId: r.postId,

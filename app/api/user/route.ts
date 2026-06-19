@@ -14,6 +14,7 @@ const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 const AVATAR_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/=]+$/i;
 const AVATAR_URL_RE = /^https?:\/\/\S+$/i;
 const MAX_AVATAR_LENGTH = 500_000;
+const MAX_BIO_LENGTH = 160;
 
 /** GET /api/user — editable profile fields for the signed-in user. */
 export async function GET() {
@@ -29,6 +30,7 @@ export async function GET() {
     user: {
       username: user.username,
       avatar: user.avatar,
+      bio: user.bio,
       isCreator: user.isCreator,
       walletAddress: user.walletAddress,
       tempoWalletAddress: tempoWallet.address,
@@ -39,14 +41,15 @@ export async function GET() {
   });
 }
 
-/** PATCH /api/user — update username/avatar for the signed-in user. */
+/** PATCH /api/user — update username/avatar/bio for the signed-in user. */
 export async function PATCH(req: NextRequest) {
-  const { username, avatar } = (await req.json()) as {
+  const { username, avatar, bio } = (await req.json()) as {
     username?: string;
     avatar?: string | null;
+    bio?: string | null;
   };
 
-  const patch: { username?: string; avatar?: string | null } = {};
+  const patch: { username?: string; avatar?: string | null; bio?: string | null } = {};
   if (username !== undefined) {
     const u = username.trim().toLowerCase();
     if (!USERNAME_RE.test(u)) {
@@ -80,6 +83,22 @@ export async function PATCH(req: NextRequest) {
       patch.avatar = a || null;
     }
   }
+  if (bio !== undefined) {
+    if (bio === null) {
+      patch.bio = null;
+    } else if (typeof bio !== "string") {
+      return Response.json({ error: "Bio must be text" }, { status: 400 });
+    } else {
+      const b = bio.trim();
+      if (b.length > MAX_BIO_LENGTH) {
+        return Response.json(
+          { error: `Bio must be ${MAX_BIO_LENGTH} characters or fewer` },
+          { status: 400 },
+        );
+      }
+      patch.bio = b || null;
+    }
+  }
 
   if (Object.keys(patch).length === 0) {
     return Response.json({ error: "Nothing to update" }, { status: 400 });
@@ -93,6 +112,7 @@ export async function PATCH(req: NextRequest) {
       user: {
         username: user.username,
         avatar: user.avatar,
+        bio: user.bio,
         isCreator: user.isCreator,
         walletAddress: user.walletAddress,
         tempoWalletAddress: tempoWallet.address,

@@ -8,53 +8,14 @@ import {
 import { compositeImageBlur, maskCoverage, fetchBuffer } from "./composite";
 import { regionsToSam2Clicks } from "./geometry";
 import { getJob, updateJob, addPredictionId, type BlurJob } from "./jobs";
+import { SIGNED_URL_TTL, usingCog, webhookFields } from "./config";
 import type { DetectedRegion, RegionPatch } from "@/lib/db/schema";
-
-// ── Webhook URL ───────────────────────────────────────────────────────────────
-// Replicate calls back here when a stage finishes. It MUST be an absolute,
-// publicly-reachable HTTPS URL — otherwise Replicate rejects the prediction at
-// create time ("422 webhook: Not a valid HTTPS URL"). Resolution order:
-//   1. NEXT_PUBLIC_APP_URL (explicit; scheme prepended if missing)
-//   2. Vercel's injected deployment host (covers prod + preview deploys)
-//   3. localhost (dev — webhook won't be delivered, but create won't 422)
-// NOTE: `?? ` must NOT be used for (1): an EMPTY-STRING env var (exactly how it
-// was misconfigured on prod) is not nullish, so `?? fallback` keeps the "" and
-// produces a relative URL. Trim-and-truthy-check instead.
-function webhookBase(): string {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return /^https?:\/\//i.test(explicit) ? explicit : `https://${explicit}`;
-  const host =
-    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
-  if (host) return `https://${host}`;
-  return "http://localhost:3000";
-}
-
-function webhookUrl(jobId: string, stage: "detect" | "track" | "cog"): string {
-  return `${webhookBase()}/api/blur/webhook?job=${jobId}&stage=${stage}`;
-}
-
-// Replicate validates the webhook at create time and 422s on a non-HTTPS URL
-// (e.g. http://localhost during local dev). When the base isn't HTTPS, omit the
-// webhook entirely and let polling/reconcile (or the dev driver) advance the
-// job — otherwise the prediction can't even be created. In prod the base is
-// HTTPS, so the webhook is attached as normal.
-function webhookFields(jobId: string, stage: "detect" | "track" | "cog") {
-  const url = webhookUrl(jobId, stage);
-  if (!/^https:\/\//i.test(url)) return {} as const;
-  const webhookEvents: Array<"completed"> = ["completed"];
-  return { webhook: url, webhook_events_filter: webhookEvents };
-}
-
-const TTL = 60 * 30; // signed-URL lifetime — must outlive the whole pipeline
+export { usingCog } from "./config";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Entry point (called by ingest). Routes to the single Cog when it's configured
 // (P5, Strategy B), else the multi-stage chain (P2).
 // ════════════════════════════════════════════════════════════════════════════
-export function usingCog(): boolean {
-  return Boolean(process.env.REPLICATE_VEIL_AUTOBLUR_VERSION);
-}
-
 /**
  * Single source of truth for (re)starting a job's pipeline from a persisted
  * `blur_jobs` row: presign the raw upload, then fire the first stage — the
@@ -72,7 +33,7 @@ export async function kickOff(
   job: Pick<BlurJob, "id" | "rawBlobKey" | "mediaType">,
   opts: DetectOpts = {},
 ) {
-  const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
+  const rawUrl = await presignPrivateGet(job.rawBlobKey, SIGNED_URL_TTL);
   return usingCog()
     ? cogStage(job.id, rawUrl, job.mediaType)
     : detectStage(job.id, rawUrl, job.mediaType, opts);
@@ -240,7 +201,7 @@ async function onDetectComplete(job: BlurJob, output: unknown) {
 
 // ── Stage 2 — TRACK (video only) ────────────────────────────────────────────
 async function trackStage(job: BlurJob, regions: DetectedRegion[]) {
-  const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
+  const rawUrl = await presignPrivateGet(job.rawBlobKey, SIGNED_URL_TTL);
   const pred = await createPredictionWithRetry({
     version: process.env.REPLICATE_SAM2_VIDEO_VERSION!,
     input: {
@@ -259,7 +220,7 @@ async function trackStage(job: BlurJob, regions: DetectedRegion[]) {
 // ── Stage 3 — COMPOSITE ───────────────────────────────────────────────────────
 async function compositeImageStage(job: BlurJob, maskUrl: string, coverage: number) {
   await updateJob(job.id, { status: "compositing" });
-  const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
+  const rawUrl = await presignPrivateGet(job.rawBlobKey, SIGNED_URL_TTL);
   const blurred = await compositeImageBlur(rawUrl, maskUrl);
   const blob = await uploadPrivate(`blur-jobs/${job.id}/blurred.jpg`, blurred, {
     contentType: "image/jpeg",
@@ -291,7 +252,7 @@ async function onTrackComplete(job: BlurJob, output: unknown) {
     const srcPath = join(work, "src.mp4");
     const maskPath = join(work, "mask.mp4");
     const outPath = join(work, "blurred.mp4");
-    const rawUrl = await presignPrivateGet(job.rawBlobKey, TTL);
+    const rawUrl = await presignPrivateGet(job.rawBlobKey, SIGNED_URL_TTL);
     writeFileSync(srcPath, await fetchBuffer(rawUrl));
     writeFileSync(maskPath, await fetchBuffer(maskVideoUrl));
 
@@ -348,14 +309,30 @@ async function buildRegionPatches(
   const meta = await probeVideo(srcPath);
   if (!meta.width || !meta.height) return [];
 
-  const maxN = Number(process.env.BLUR_MAX_REGIONS ?? 3);
-  const pad = Number(process.env.BLUR_REGION_PAD ?? 0.18);
+  const maxN = Number(process.env.BLUR_MAX_REGIONS ?? 6);
+  const pad = Number(process.env.BLUR_REGION_PAD ?? 0.1);
+  const maxArea = Number(process.env.BLUR_MAX_REGION_AREA ?? 0.35);
+  const maxHeight = Number(process.env.BLUR_MAX_REGION_HEIGHT ?? 0.75);
+  const maxWidth = Number(process.env.BLUR_MAX_REGION_WIDTH ?? 0.75);
   const clusters = clusterBoxes(regions, maxN);
 
   const patches: RegionPatch[] = [];
   for (let i = 0; i < clusters.length; i++) {
     const px = padClampEven(clusters[i].box, pad, meta.width, meta.height);
     if (px.w < 16 || px.h < 16) continue; // too small to bother
+    const normalized = toNormalizedRect(px, meta.width, meta.height);
+    if (
+      normalized.w * normalized.h > maxArea ||
+      normalized.h > maxHeight ||
+      normalized.w > maxWidth
+    ) {
+      console.warn("[blur] skipping oversized partial region", {
+        jobId: job.id,
+        label: clusters[i].label,
+        rect: normalized,
+      });
+      continue;
+    }
     const out = join(work, `region-${i}.mp4`);
     await cropVideoRegion(srcPath, out, px);
     const blob = await uploadPrivate(
@@ -365,7 +342,7 @@ async function buildRegionPatches(
     );
     patches.push({
       label: clusters[i].label,
-      rect: toNormalizedRect(px, meta.width, meta.height),
+      rect: normalized,
       patchKey: blob.pathname,
     });
   }
@@ -413,7 +390,7 @@ async function extractFirstFrame(
       contentType: "image/jpeg",
       upsert: true,
     });
-    return { keyframeUrl: await presignPrivateGet(blob.pathname, TTL), fps };
+    return { keyframeUrl: await presignPrivateGet(blob.pathname, SIGNED_URL_TTL), fps };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

@@ -1,31 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { togglePostSave } from "@/lib/db/social";
 import { getPost } from "@/lib/db/queries";
-import {
-  requireCurrentAppUser,
-  setAccountCookie,
-  unauthorizedJson,
-  UnauthorizedError,
-} from "@/lib/app-user";
+import { setAccountCookie } from "@/lib/app-user";
+import { jsonError, requireAppUserForRoute } from "@/lib/api/route";
 
 export const runtime = "nodejs";
 
-type Params = { params: Promise<{ id: string }> };
-
 /** POST /api/posts/[id]/save — toggle the current user's bookmark on a post. */
-export async function POST(_req: NextRequest, { params }: Params) {
-  const { id } = await params;
-  let user;
-  try {
-    user = await requireCurrentAppUser();
-  } catch (err) {
-    if (err instanceof UnauthorizedError) return unauthorizedJson();
-    throw err;
-  }
+export async function POST(
+  _req: NextRequest,
+  ctx: RouteContext<"/api/posts/[id]/save">,
+) {
+  const { id } = await ctx.params;
+  const auth = await requireAppUserForRoute();
+  if (auth.response) return auth.response;
 
   const post = await getPost(id);
-  if (!post) return Response.json({ error: "Post not found" }, { status: 404 });
+  if (!post) return jsonError("Post not found", 404);
 
-  const result = await togglePostSave(user.id, id);
-  return setAccountCookie(NextResponse.json(result), user.id);
+  const result = await togglePostSave(auth.user.id, id);
+  return setAccountCookie(NextResponse.json(result), auth.user.id);
 }

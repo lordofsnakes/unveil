@@ -13,6 +13,8 @@ import { useMediaSync } from "./useMediaSync";
 
 type Rect = { x: number; y: number; w: number; h: number }; // normalized 0..1
 type TrackPoint = { t: number; rect: Rect };
+const REVEAL_MASK_RADIUS_SCALE = 0.9;
+const REVEAL_MASK_SOLID_STOP = 86;
 
 export type PartialRegion = {
   id: string;
@@ -56,6 +58,7 @@ export function PartialVideoStage({
   const containerRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLVideoElement>(null);
   const patchEls = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const patchFrameEls = useRef<Map<string, HTMLDivElement>>(new Map());
   // Wrappers for locked region buttons — moved imperatively by the rAF loop.
   const gateEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const [cover, setCover] = useState<{
@@ -132,13 +135,12 @@ export function PartialVideoStage({
     [cover],
   );
 
-  // Drive the tracked buttons: each frame, interpolate the region's track at the
-  // base video's time and write the wrapper's box. Locked + tracked regions only.
+  // Drive the tracked overlays: each frame, interpolate the region's track at
+  // the base video's time. Locked regions move their gate; revealed regions keep
+  // the static crop video but clip its visible area to the moving target.
   useEffect(() => {
     if (!cover) return;
-    const tracked = regions.filter(
-      (r) => r.track && r.track.length > 0 && !revealed[r.id],
-    );
+    const tracked = regions.filter((r) => r.track && r.track.length > 0);
     if (tracked.length === 0) return;
 
     let raf = 0;
@@ -147,19 +149,34 @@ export function PartialVideoStage({
       if (v && v.videoWidth) {
         const t = v.currentTime;
         for (const r of tracked) {
-          const el = gateEls.current.get(r.id);
-          if (!el) continue;
+          const gateEl = gateEls.current.get(r.id);
+          const patchEl = patchFrameEls.current.get(r.id);
+          if (!gateEl && !patchEl) continue;
           const rect = sampleTrack(r.track!, t);
           const box = rect && boxFor(rect);
           if (!box) {
-            el.style.visibility = "hidden";
+            if (gateEl) gateEl.style.visibility = "hidden";
+            if (patchEl) patchEl.style.visibility = "hidden";
             continue;
           }
-          el.style.visibility = "visible";
-          el.style.left = `${box.left}px`;
-          el.style.top = `${box.top}px`;
-          el.style.width = `${box.width}px`;
-          el.style.height = `${box.height}px`;
+          if (revealed[r.id] && patchEl) {
+            const staticBox = boxFor(r.rect);
+            if (staticBox) {
+              const mask = revealMaskFor(box, staticBox);
+              patchEl.style.visibility = "visible";
+              patchEl.style.clipPath = "none";
+              patchEl.style.maskImage = mask;
+              patchEl.style.maskRepeat = "no-repeat";
+              patchEl.style.webkitMaskImage = mask;
+              patchEl.style.webkitMaskRepeat = "no-repeat";
+            }
+          } else if (gateEl) {
+            gateEl.style.visibility = "visible";
+            gateEl.style.left = `${box.left}px`;
+            gateEl.style.top = `${box.top}px`;
+            gateEl.style.width = `${box.width}px`;
+            gateEl.style.height = `${box.height}px`;
+          }
         }
       }
       raf = requestAnimationFrame(tick);
@@ -174,8 +191,9 @@ export function PartialVideoStage({
       className="feed-media relative mx-3 overflow-hidden rounded-md"
       style={{ aspectRatio: "4 / 5" }}
     >
-      {/* Free, fully-blurred clip — the master clock. No scale transform: it would
-          throw off the region geometry. */}
+      {/* Free server-blurred clip — the master clock. No scale transform or
+          client-side blur: the composited video already contains the masked
+          blur, and extra CSS blur would smear the whole frame. */}
       <video
         ref={baseRef}
         src={previewUrl}
@@ -186,8 +204,30 @@ export function PartialVideoStage({
         preload="metadata"
         onLoadedMetadata={recompute}
         className="absolute inset-0 h-full w-full object-cover"
-        style={{ filter: "blur(14px)" }}
       />
+
+      {regions.map((r) => {
+        const staticBox = boxFor(r.rect);
+        const url = revealed[r.id];
+        if (!staticBox || !url) return null;
+        return (
+          <RegionPatch
+            key={r.id}
+            box={staticBox}
+            url={url}
+            tracked={!!(r.track && r.track.length > 0)}
+            registerVideo={(el) => {
+              if (el) patchEls.current.set(r.id, el);
+              else patchEls.current.delete(r.id);
+            }}
+            registerFrame={(el) => {
+              if (el) patchFrameEls.current.set(r.id, el);
+              else patchFrameEls.current.delete(r.id);
+            }}
+          />
+        );
+      })}
+
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -197,25 +237,10 @@ export function PartialVideoStage({
       />
 
       {regions.map((r) => {
-        // Static union box: the revealed crop's position, and the button's
-        // fallback when there's no per-frame track.
+        // Static union box: the button's fallback when there's no per-frame
+        // track. Revealed patches render in the video layer above.
         const staticBox = boxFor(r.rect);
-        if (!staticBox) return null;
-        const url = revealed[r.id];
-        if (url) {
-          return (
-            <RegionPatch
-              key={r.id}
-              box={staticBox}
-              url={url}
-              register={(el) => {
-                if (el) patchEls.current.set(r.id, el);
-                else patchEls.current.delete(r.id);
-              }}
-            />
-          );
-        }
-        const tracked = !!(r.track && r.track.length > 0);
+        if (!staticBox || revealed[r.id]) return null;
         return (
           <div
             key={r.id}
@@ -231,7 +256,6 @@ export function PartialVideoStage({
               postId={postId}
               regionId={r.id}
               price={price}
-              tracked={tracked}
               onUnlock={(signedUrl) =>
                 setRevealed((m) => ({ ...m, [r.id]: signedUrl }))
               }
@@ -240,13 +264,6 @@ export function PartialVideoStage({
         );
       })}
 
-      {/* Free-to-watch hint. */}
-      <div
-        className="pointer-events-none absolute bottom-3 left-3 rounded-pill px-2.5 py-1 text-[11px] font-medium"
-        style={{ background: "rgba(8,6,8,.55)", backdropFilter: "blur(4px)" }}
-      >
-        Plays free · tap a blurred area to reveal
-      </div>
     </div>
   );
 }
@@ -272,22 +289,47 @@ function sampleTrack(track: TrackPoint[], t: number): Rect | null {
   };
 }
 
+function revealMaskFor(inner: Box, outer: Box): string {
+  const centerX = inner.left - outer.left + inner.width / 2;
+  const centerY = inner.top - outer.top + inner.height / 2;
+  const horizontalEdgeCap = Math.max(
+    1,
+    Math.min(centerX, outer.width - centerX) * 0.96,
+  );
+  const verticalEdgeCap =
+    outer.top > 1 ? Math.max(1, centerY * 0.96) : Number.POSITIVE_INFINITY;
+  const radiusX = Math.max(
+    1,
+    Math.min(inner.width * REVEAL_MASK_RADIUS_SCALE, horizontalEdgeCap),
+  );
+  const radiusY = Math.max(
+    1,
+    Math.min(inner.height * REVEAL_MASK_RADIUS_SCALE, verticalEdgeCap),
+  );
+  return `radial-gradient(ellipse ${radiusX}px ${radiusY}px at ${centerX}px ${centerY}px, #000 0%, #000 ${REVEAL_MASK_SOLID_STOP}%, transparent 100%)`;
+}
+
 function RegionPatch({
   box,
   url,
-  register,
+  tracked,
+  registerVideo,
+  registerFrame,
 }: {
   box: Box;
   url: string;
-  register: (el: HTMLVideoElement | null) => void;
+  tracked: boolean;
+  registerVideo: (el: HTMLVideoElement | null) => void;
+  registerFrame: (el: HTMLDivElement | null) => void;
 }) {
   return (
     <div
+      ref={registerFrame}
       className="motion-patch absolute overflow-hidden rounded-[3px]"
-      style={{ ...box }}
+      style={{ ...box, visibility: tracked ? "hidden" : "visible" }}
     >
       <video
-        ref={register}
+        ref={registerVideo}
         src={url}
         autoPlay
         muted
@@ -304,13 +346,11 @@ function RegionGate({
   postId,
   regionId,
   price,
-  tracked,
   onUnlock,
 }: {
   postId: string;
   regionId: string;
   price: string;
-  tracked: boolean;
   onUnlock: (signedUrl: string) => void;
 }) {
   const { state, unlock } = useRegionUnlock(postId, regionId, {
@@ -326,17 +366,6 @@ function RegionGate({
       aria-label={`Reveal this area for $${formatUsd(price)}`}
       className="absolute inset-0 flex items-center justify-center transition-transform duration-[140ms] active:scale-[0.97]"
     >
-      {/* Tap target outline over the blurred region. A solid ring while it
-          tracks the moving area reads as "this follows the blur". */}
-      <span
-        className="absolute inset-0 rounded-[3px]"
-        style={{
-          border: tracked
-            ? "1.5px solid rgba(255,255,255,.7)"
-            : "1.5px dashed rgba(255,255,255,.5)",
-          background: "rgba(8,6,8,.18)",
-        }}
-      />
       <span
         className="bg-primary text-primary-fg relative flex items-center gap-1.5 rounded-pill px-3 py-1.5 text-[13px] font-semibold"
         style={{ boxShadow: "0 6px 20px var(--primary-glow)" }}

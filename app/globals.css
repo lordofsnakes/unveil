@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Veil design tokens — see DESIGN_PRD.md §3 (authoritative).
+   Veil design tokens — see docs/design-prd.md §3 (authoritative).
    Dark is the default (:root). Light is the .light override.
    ============================================================ */
 
