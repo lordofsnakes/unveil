@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { Play, Volume2, VolumeX } from "lucide-react";
 
 /**
@@ -25,7 +24,6 @@ export function VideoStage({
   poster?: string;
   overlay?: ReactNode;
 }) {
-  const reduce = useReducedMotion();
   const baseRef = useRef<HTMLVideoElement>(null);
   const cleanRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
@@ -108,23 +106,10 @@ export function VideoStage({
         }}
       />
 
-      {/* Revealed clean clip springs in over the teaser. */}
+      {/* Revealed clean clip springs in over the teaser (CSS, see globals.css). */}
       {showClean && (
         <>
-          <motion.div
-            className="absolute inset-0"
-            initial={
-              reduce
-                ? { opacity: 0 }
-                : { opacity: 0, filter: "blur(15px)", scale: 1.06 }
-            }
-            animate={
-              reduce
-                ? { opacity: 1 }
-                : { opacity: 1, filter: "blur(0px)", scale: 1 }
-            }
-            transition={{ duration: reduce ? 0.3 : 0.62, ease: [0.22, 1, 0.36, 1] }}
-          >
+          <div className="motion-reveal absolute inset-0">
             <video
               ref={cleanRef}
               src={revealedUrl}
@@ -135,21 +120,19 @@ export function VideoStage({
               onClick={togglePlay}
               className="h-full w-full object-cover"
             />
-          </motion.div>
-          {!reduce && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden">
-              <div
-                className="motion-shimmer absolute top-0 bottom-0"
-                style={{
-                  width: "55%",
-                  background:
-                    "linear-gradient(105deg,transparent,rgba(216,27,71,.5) 45%,rgba(255,210,224,.85) 50%,rgba(216,27,71,.5) 55%,transparent)",
-                  mixBlendMode: "screen",
-                  animation: "vshimmer .85s cubic-bezier(.22,1,.36,1) .08s 1 both",
-                }}
-              />
-            </div>
-          )}
+          </div>
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div
+              className="motion-shimmer absolute top-0 bottom-0"
+              style={{
+                width: "55%",
+                background:
+                  "linear-gradient(105deg,transparent,rgba(216,27,71,.5) 45%,rgba(255,210,224,.85) 50%,rgba(216,27,71,.5) 55%,transparent)",
+                mixBlendMode: "screen",
+                animation: "vshimmer .85s cubic-bezier(.22,1,.36,1) .08s 1 both",
+              }}
+            />
+          </div>
 
           {/* Sound toggle — the unlock tap can't carry through async settlement to
               an unmuted autoplay, so we reveal muted and let the fan opt into audio. */}

@@ -27,7 +27,8 @@
   /* Text */
   --text: #f5f2f3;
   --text-muted: #a8a0a4;
-  --text-faint: #6e666b;
+  /* Lifted from #6e666b (~3.3:1) to meet WCAG AA (4.5:1) on bg + cards. */
+  --text-faint: #8d858b;
 
   /* Status (used sparingly) */
   --success: #34d399;
@@ -78,7 +79,8 @@
 
   --text: #1a1718;
   --text-muted: #5c5559;
-  --text-faint: #8a8287;
+  /* Lifted from #8a8287 (~3.6:1) to meet WCAG AA (4.5:1) on white + surfaces. */
+  --text-faint: #726c70;
 
   --success: #15a06b;
   --gold: #b8860b;
@@ -143,6 +145,31 @@
   100% {
     transform: translateX(135%) skewX(-14deg);
     opacity: 0;
+  }
+}
+/* Reveal: full media springs in over its blurred preview. Replaces the former
+   framer-motion spring so framer stays off the feed's critical-path bundle. */
+@keyframes vreveal {
+  from {
+    opacity: 0;
+    filter: blur(15px);
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+/* Patch: a partial-reveal region crop fading in (lighter — no scale). */
+@keyframes vpatch {
+  from {
+    opacity: 0;
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
   }
 }
 @keyframes vspring {
@@ -290,6 +317,14 @@
   }
 }
 
+/* Reveal/patch animation hooks (play once on mount; `both` holds the end state). */
+.motion-reveal {
+  animation: vreveal var(--dur-reveal) var(--ease-out) both;
+}
+.motion-patch {
+  animation: vpatch 550ms var(--ease-out) both;
+}
+
 /* ============================================================
    Base
    ============================================================ */
@@ -361,8 +396,10 @@ button:disabled {
     transition-duration: 1ms !important;
   }
 
-  .motion-reveal,
+  /* Reveal/patch collapse to instant via the 1ms duration above (the `both`
+     fill still lands on the revealed end state). The shimmer is pure flourish —
+     hide it outright rather than freeze a bright stripe mid-sweep. */
   .motion-shimmer {
-    animation: none !important;
+    display: none !important;
   }
 }

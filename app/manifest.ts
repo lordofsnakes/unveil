@@ -4,11 +4,13 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Veil",
     short_name: "Veil",
-    description: "Tap to unlock premium content",
+    description:
+      "Pay-per-tap premium content with invisible app-balance payments.",
     start_url: "/",
     display: "standalone",
-    background_color: "#000000",
-    theme_color: "#000000",
+    // Match the layout viewport themeColor so the splash + status bar agree.
+    background_color: "#121012",
+    theme_color: "#121012",
     orientation: "portrait",
     icons: [
       {

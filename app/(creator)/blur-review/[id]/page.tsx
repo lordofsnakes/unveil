@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getJob } from "@/lib/blur/jobs";
 import { presignPrivateGet } from "@/lib/blob";
 import { ReviewPanel } from "@/components/blur/ReviewPanel";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic"; // always reflect current job state
+
+export const metadata: Metadata = { title: "Blur review" };
 
 export default async function BlurReviewPage({
   params,

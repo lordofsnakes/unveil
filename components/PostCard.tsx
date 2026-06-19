@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
   Heart,
@@ -15,9 +16,14 @@ import { UnlockButton } from "./UnlockButton";
 import { RevealMedia } from "./RevealMedia";
 import { VideoStage } from "./VideoStage";
 import { PartialVideoStage, type PartialRegion } from "./PartialVideoStage";
-import { CommentsSheet } from "./CommentsSheet";
-import { TipSheet } from "./TipSheet";
 import { useAppAuth } from "./useAppAuth";
+
+// Interaction-only sheets — split out of the eager feed bundle and fetched the
+// first time a fan opens comments / tips (they only render when opened anyway).
+const CommentsSheet = dynamic(() =>
+  import("./CommentsSheet").then((m) => m.CommentsSheet),
+);
+const TipSheet = dynamic(() => import("./TipSheet").then((m) => m.TipSheet));
 
 export type PostSocialState = {
   likeCount: number;

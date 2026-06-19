@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSignIn, useSignUp } from "@clerk/nextjs/legacy";
 import { Eye, EyeOff, Lock } from "lucide-react";
@@ -9,7 +10,7 @@ import { notifyDevAuthChanged, useAppAuth } from "./useAppAuth";
 
 type AuthMode = "sign-in" | "sign-up";
 type OAuthStrategy = "oauth_google" | "oauth_x";
-type SignInStep = "credentials" | "client-trust";
+type SignInStep = "credentials" | "client-trust" | "reset" | "reset-verify";
 type SignUpStep = "credentials" | "verification";
 type EmailCodeSecondFactor = {
   strategy: string;
@@ -105,14 +106,21 @@ export function Onboarding() {
   const [verificationCode, setVerificationCode] = useState("");
   const [signUpStep, setSignUpStep] = useState<SignUpStep>("credentials");
   const [showPw, setShowPw] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [isDevPending, setIsDevPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isVerifyingClientTrust = mode === "sign-in" && signInStep === "client-trust";
   const isVerifyingSignUp = mode === "sign-up" && signUpStep === "verification";
-  const canSubmit = isVerifyingSignUp || isVerifyingClientTrust
-    ? verificationCode.trim() !== "" && !isPending
-    : email.trim() !== "" && password !== "" && !isPending;
+  const isResetRequest = mode === "sign-in" && signInStep === "reset";
+  const isResetVerify = mode === "sign-in" && signInStep === "reset-verify";
+  const canSubmit = isResetRequest
+    ? email.trim() !== "" && !isPending
+    : isResetVerify
+      ? verificationCode.trim() !== "" && newPassword !== "" && !isPending
+      : isVerifyingSignUp || isVerifyingClientTrust
+        ? verificationCode.trim() !== "" && !isPending
+        : email.trim() !== "" && password !== "" && !isPending;
 
   useEffect(() => {
     if (isSignedIn) router.replace("/");
@@ -256,6 +264,70 @@ export function Onboarding() {
     }
   }
 
+  async function submitResetRequest() {
+    if (!canSubmit || !signInState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      await signInState.signIn.create({
+        strategy: "reset_password_email_code",
+        identifier: email.trim(),
+      });
+      setSignInStep("reset-verify");
+      setVerificationCode("");
+      setNewPassword("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function submitResetVerify() {
+    if (!canSubmit || !signInState.isLoaded) return;
+    setIsPending(true);
+    setError(null);
+    try {
+      const attempt = await signInState.signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code: verificationCode.trim(),
+      });
+      if (attempt.status === "needs_new_password") {
+        const done = await signInState.signIn.resetPassword({
+          password: newPassword,
+        });
+        if (done.status !== "complete" || !done.createdSessionId) {
+          throw new Error("Could not reset password. Please try again.");
+        }
+        await signInState.setActive({ session: done.createdSessionId });
+        router.replace("/");
+        router.refresh();
+        return;
+      }
+      if (attempt.status === "complete" && attempt.createdSessionId) {
+        await signInState.setActive({ session: attempt.createdSessionId });
+        router.replace("/");
+        router.refresh();
+        return;
+      }
+      throw new Error(signInStatusMessage(attempt.status));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  // Single submit path so Enter and the button behave identically per step.
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (isResetRequest) return void submitResetRequest();
+    if (isResetVerify) return void submitResetVerify();
+    if (isVerifyingClientTrust) return void submitClientTrustCode();
+    if (isVerifyingSignUp) return void submitVerificationCode();
+    void submitEmailPassword();
+  }
+
   async function startOAuth(strategy: OAuthStrategy) {
     if (!signInState.isLoaded || !signUpState.isLoaded) return;
     setIsPending(true);
@@ -355,7 +427,11 @@ export function Onboarding() {
         </h1>
 
         <div className="text-text mb-[13px] text-sm font-semibold">
-          {isVerifyingClientTrust
+          {isResetRequest
+            ? "Reset password"
+            : isResetVerify
+            ? "Enter code & new password"
+            : isVerifyingClientTrust
             ? "Verify email"
             : mode === "sign-in"
             ? "Log in"
@@ -364,7 +440,47 @@ export function Onboarding() {
               : "Create account"}
         </div>
 
-        {isVerifyingSignUp || isVerifyingClientTrust ? (
+        <form onSubmit={handleSubmit}>
+        {isResetRequest ? (
+          <input
+            aria-label="Email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            type="email"
+            autoComplete="email"
+            spellCheck={false}
+            className="bg-surface-2 text-text placeholder:text-faint mb-[18px] h-[54px] w-full rounded-[14px] px-[18px] text-base outline-none focus:border-[color:var(--primary)]"
+            style={{ border: "1px solid var(--hairline-2)" }}
+          />
+        ) : isResetVerify ? (
+          <>
+            <input
+              aria-label="Verification code"
+              name="verification-code"
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value)}
+              placeholder="Verification code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              className="bg-surface-2 text-text placeholder:text-faint mb-3.5 h-[54px] w-full rounded-[14px] px-[18px] text-base outline-none focus:border-[color:var(--primary)]"
+              style={{ border: "1px solid var(--hairline-2)" }}
+            />
+            <input
+              aria-label="New password"
+              name="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="New password"
+              type="password"
+              autoComplete="new-password"
+              className="bg-surface-2 text-text placeholder:text-faint mb-[18px] h-[54px] w-full rounded-[14px] px-[18px] text-base outline-none focus:border-[color:var(--primary)]"
+              style={{ border: "1px solid var(--hairline-2)" }}
+            />
+          </>
+        ) : isVerifyingSignUp || isVerifyingClientTrust ? (
           <input
             aria-label="Verification code"
             name="verification-code"
@@ -419,14 +535,7 @@ export function Onboarding() {
         <div id="clerk-captcha" className="mb-3" />
 
         <button
-          type="button"
-          onClick={
-            isVerifyingClientTrust
-              ? submitClientTrustCode
-              : isVerifyingSignUp
-                ? submitVerificationCode
-                : submitEmailPassword
-          }
+          type="submit"
           disabled={!canSubmit}
           className="h-[54px] w-full rounded-pill text-[15px] font-bold tracking-[0.04em] transition-transform duration-[140ms] ease-[var(--ease-veil)] active:scale-[0.985]"
           style={
@@ -437,20 +546,36 @@ export function Onboarding() {
         >
           {isPending
             ? "OPENING..."
-            : mode === "sign-in"
-              ? isVerifyingClientTrust
-                ? "VERIFY EMAIL"
-                : "LOG IN"
-              : isVerifyingSignUp
-                ? "VERIFY EMAIL"
-                : "SIGN UP"}
+            : isResetRequest
+              ? "SEND RESET CODE"
+              : isResetVerify
+                ? "RESET PASSWORD"
+                : mode === "sign-in"
+                  ? isVerifyingClientTrust
+                    ? "VERIFY EMAIL"
+                    : "LOG IN"
+                  : isVerifyingSignUp
+                    ? "VERIFY EMAIL"
+                    : "SIGN UP"}
         </button>
+        </form>
 
         <p className="text-faint mt-3.5 text-[12.5px] leading-[1.55]">
           By logging in and using Veil, you agree to our{" "}
-          <span className="text-primary">Terms of Service</span> and{" "}
-          <span className="text-primary">Privacy Policy</span>, and confirm that you
-          are at least 18 years old.
+          <Link
+            href="/terms"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link
+            href="/privacy"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            Privacy Policy
+          </Link>
+          , and confirm that you are at least 18 years old.
         </p>
 
         {error && <p className="text-danger mt-3 text-[13px]">{error}</p>}
@@ -459,7 +584,18 @@ export function Onboarding() {
           className="text-primary flex items-center justify-center gap-3 text-sm font-semibold"
           style={{ margin: "26px 0 22px" }}
         >
-          <button type="button" className="hover:text-primary-hover">
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setMode("sign-in");
+              setSignInStep("reset");
+              setPassword("");
+              setVerificationCode("");
+              setNewPassword("");
+            }}
+            className="hover:text-primary-hover"
+          >
             Forgot password?
           </button>
           <span className="text-faint">·</span>

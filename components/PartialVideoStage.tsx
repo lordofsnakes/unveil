@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { motion, useReducedMotion } from "framer-motion";
 import { Lock } from "lucide-react";
 import { formatUsd } from "@/lib/constants";
 import { useRegionUnlock } from "./useRegionUnlock";
@@ -193,14 +192,10 @@ function RegionPatch({
   url: string;
   register: (el: HTMLVideoElement | null) => void;
 }) {
-  const reduce = useReducedMotion();
   return (
-    <motion.div
-      className="absolute overflow-hidden rounded-[3px]"
+    <div
+      className="motion-patch absolute overflow-hidden rounded-[3px]"
       style={{ ...box }}
-      initial={reduce ? { opacity: 0 } : { opacity: 0, filter: "blur(12px)" }}
-      animate={reduce ? { opacity: 1 } : { opacity: 1, filter: "blur(0px)" }}
-      transition={{ duration: reduce ? 0.3 : 0.55, ease: [0.22, 1, 0.36, 1] }}
     >
       <video
         ref={register}
@@ -212,7 +207,7 @@ function RegionPatch({
         preload="auto"
         className="h-full w-full object-cover"
       />
-    </motion.div>
+    </div>
   );
 }
 

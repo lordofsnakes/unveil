@@ -1,17 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Bell, Plus, MessageCircle } from "lucide-react";
-import { SettingsDrawer } from "./SettingsDrawer";
 import { useAppAuth } from "./useAppAuth";
+
+// The settings drawer (with its passkey/theme logic) only matters once the fan
+// taps Profile — defer its chunk until then instead of shipping it with the nav.
+const SettingsDrawer = dynamic(() =>
+  import("./SettingsDrawer").then((m) => m.SettingsDrawer),
+);
 
 export function BottomNav() {
   const pathname = usePathname();
   const { isSignedIn } = useAppAuth();
   const [unread, setUnread] = useState(0);
   const [drawer, setDrawer] = useState(false);
+  // Stays true after the first open so the close animation still runs.
+  const [drawerMounted, setDrawerMounted] = useState(false);
 
   // Real unread-message badge. Refetched on navigation (cheap) so opening a
   // thread — which marks it read — clears the badge when you come back.
@@ -76,7 +84,10 @@ export function BottomNav() {
           {/* Profile - opens the settings drawer instead of navigating. */}
           <button
             type="button"
-            onClick={() => setDrawer(true)}
+            onClick={() => {
+              setDrawerMounted(true);
+              setDrawer(true);
+            }}
             aria-label="Profile"
             className="flex size-12 items-center justify-center"
           >
@@ -96,7 +107,9 @@ export function BottomNav() {
       {/* Rendered as a sibling of <nav> so the drawer's z-50 isn't trapped
           inside the nav's z-30 stacking context (it would otherwise paint
           beneath page headers like the feed's sticky z-40 bar). */}
-      <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
+      {drawerMounted && (
+        <SettingsDrawer open={drawer} onClose={() => setDrawer(false)} />
+      )}
     </>
   );
 }

@@ -29,9 +29,16 @@ async function loadFeed(): Promise<FeedPost[] | null> {
         const post: FeedPost = {
           id: p.id,
           title: p.title,
-          // Preview blob is private; presign with a long TTL for the feed.
-          blurredPreviewUrl: await presignPrivateGet(p.blurredPreviewUrl, 3600),
-          poster: p.posterKey ? await presignPrivateGet(p.posterKey, 3600) : null,
+          // Preview/poster are non-sensitive blurred teasers: presign with a
+          // long TTL AND a 10-min cache window so the URL is stable enough for
+          // the CDN + next/image optimizer to cache instead of re-encoding it
+          // on every request.
+          blurredPreviewUrl: await presignPrivateGet(p.blurredPreviewUrl, 3600, {
+            cacheWindowSeconds: 600,
+          }),
+          poster: p.posterKey
+            ? await presignPrivateGet(p.posterKey, 3600, { cacheWindowSeconds: 600 })
+            : null,
           unlockPrice: p.unlockPrice,
           mediaType: p.mediaType,
           accessMode: p.accessMode,
