@@ -37,6 +37,25 @@ function errorMessage(err: unknown) {
   );
 }
 
+// A social-only account (created via Google/X) has no password credential, so
+// Clerk rejects password sign-in with `strategy_for_user_invalid` ("The
+// verification strategy is not valid for this account"). Point the user at the
+// social buttons instead of surfacing the raw API message.
+function oauthOnlyAccountMessage(err: unknown): string | null {
+  const clerkError = err as {
+    errors?: { code?: string; message?: string; longMessage?: string }[];
+  };
+  const first = clerkError.errors?.[0];
+  const text = `${first?.longMessage ?? ""} ${first?.message ?? ""}`;
+  if (
+    first?.code === "strategy_for_user_invalid" ||
+    /verification strategy is not valid/i.test(text)
+  ) {
+    return 'This account was created with a social login. Use "Sign in with Google" or "Sign in with X" below.';
+  }
+  return null;
+}
+
 function signInStatusMessage(status: string | null) {
   switch (status) {
     case "needs_second_factor":
@@ -186,7 +205,9 @@ export function Onboarding() {
         }
       }
     } catch (err) {
-      setError(errorMessage(err));
+      setError(
+        (mode === "sign-in" ? oauthOnlyAccountMessage(err) : null) ?? errorMessage(err),
+      );
     } finally {
       setIsPending(false);
     }
