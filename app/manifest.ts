@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Veil",
-    short_name: "Veil",
+    name: "Unveil",
+    short_name: "Unveil",
     description:
       "Pay-per-tap premium content with invisible app-balance payments.",
     start_url: "/",

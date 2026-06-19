@@ -23,17 +23,17 @@ const SITE_DESCRIPTION =
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   // Per-route layouts set `title: "Search"` etc. and inherit this template,
-  // producing unique, descriptive document titles ("Search · Veil").
+  // producing unique, descriptive document titles ("Search · Unveil").
   title: {
-    default: "Veil — lift the veil",
-    template: "%s · Veil",
+    default: "Unveil — lift the veil",
+    template: "%s · Unveil",
   },
   description: SITE_DESCRIPTION,
-  applicationName: "Veil",
+  applicationName: "Unveil",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Veil",
+    title: "Unveil",
   },
   formatDetection: { telephone: false },
   manifest: "/manifest.webmanifest",
@@ -44,14 +44,14 @@ export const metadata: Metadata = {
   // automatically; these tags give shared links a title + description.
   openGraph: {
     type: "website",
-    siteName: "Veil",
-    title: "Veil — lift the veil",
+    siteName: "Unveil",
+    title: "Unveil — lift the veil",
     description: SITE_DESCRIPTION,
     url: SITE_URL,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Veil — lift the veil",
+    title: "Unveil — lift the veil",
     description: SITE_DESCRIPTION,
   },
 };
@@ -60,7 +60,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover", // handles iPhone notch
-  themeColor: "#121012",
+  themeColor: "#000000",
 };
 
 // Applies the persisted theme before paint (dark default → no class). No FOUC.

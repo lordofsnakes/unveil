@@ -27,7 +27,10 @@ export function RevealMedia({
   priority?: boolean;
 }) {
   return (
-    <div className="relative mx-3 overflow-hidden rounded-md" style={{ aspectRatio: "4 / 5" }}>
+    <div
+      className="feed-media relative mx-3 overflow-hidden rounded-md"
+      style={{ aspectRatio: "4 / 5" }}
+    >
       {/* Blurred preview — always underneath. Optimized (resized + AVIF/WebP):
           it's the LCP element, and displayed under a 15px blur so q=50 is
           invisible. `preload` replaces the deprecated `priority` in Next 16. */}
