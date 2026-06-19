@@ -63,7 +63,7 @@ const nextConfig: NextConfig = {
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       {
         key: "Permissions-Policy",
-        value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+        value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()",
       },
     ];
     // HSTS + CSP are production-only: a strict CSP would fight Turbopack HMR and

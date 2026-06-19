@@ -9,6 +9,7 @@
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "db:migrate:call-sessions": "dotenv -e .env.local -- tsx scripts/apply-call-sessions-migration.ts",
     "tempo:wallets:migrate": "dotenv -e .env.local -- tsx scripts/migrate-tempo-wallets.ts",
     "key:init": "dotenv -e .env.local -- tsx scripts/init-platform-key.ts",
     "key:rotate": "dotenv -e .env.local -- tsx scripts/init-platform-key.ts --rotate",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.5",
+    "@elevenlabs/react": "^1.7.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@radix-ui/react-accordion": "^1.2.14",

@@ -32,6 +32,16 @@ export const loyaltyEventTypeEnum = pgEnum("loyalty_event_type", [
 // messages reuse the existing posts/unlocks/Tempo path — see lib/db/messages.ts.
 export const messageKindEnum = pgEnum("message_kind", ["text", "ppv"]);
 
+export const callSessionStatusEnum = pgEnum("call_session_status", [
+  "created",
+  "connecting",
+  "connected",
+  "ending",
+  "settled",
+  "released",
+  "failed",
+]);
+
 export const custodialLedgerTypeEnum = pgEnum("custodial_ledger_type", [
   "deposit",
   "unlock_debit",
@@ -280,6 +290,49 @@ export const messages = pgTable(
       .notNull(),
   },
   (t) => [index("messages_thread_idx").on(t.threadId, t.createdAt)],
+);
+
+// ── call_sessions ────────────────────────────────────────────────────────────
+// Durable in-browser paid call lifecycle. Billing time is server-authoritative:
+// connectedAt starts the meter, endedAt stops it, lastReservedSecond prevents
+// duplicate escrow reservation.
+export const callSessions = pgTable(
+  "call_sessions",
+  {
+    id: varchar("id", { length: 80 }).primaryKey(),
+    threadId: uuid("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    fanId: uuid("fan_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    creatorId: uuid("creator_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    elevenConversationId: varchar("eleven_conversation_id", { length: 255 }),
+    status: callSessionStatusEnum("status").notNull().default("created"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    connectedAt: timestamp("connected_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    lastReservedSecond: integer("last_reserved_second").notNull().default(0),
+    settledSeconds: integer("settled_seconds"),
+    settledAmount: decimal("settled_amount", { precision: 18, scale: 8 }),
+    settlementTxHash: varchar("settlement_tx_hash", { length: 66 }),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("call_sessions_thread_idx").on(t.threadId, t.createdAt),
+    index("call_sessions_fan_active_idx").on(t.fanId, t.threadId, t.status),
+    index("call_sessions_eleven_conversation_idx").on(t.elevenConversationId),
+  ],
 );
 
 // ── blur_jobs (auto-blur pipeline) ────────────────────────────────────────────
@@ -677,6 +730,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   loyaltyEntries: many(loyaltyLedger),
   blurJobs: many(blurJobs),
   sentMessages: many(messages),
+  fanCallSessions: many(callSessions, { relationName: "fan_call_sessions" }),
+  creatorCallSessions: many(callSessions, {
+    relationName: "creator_call_sessions",
+  }),
   custodialLedgerEntries: many(custodialLedger),
   paymentDeposits: many(paymentDeposits),
   custodialWallet: one(custodialWallets, {
@@ -709,12 +766,30 @@ export const threadsRelations = relations(threads, ({ one, many }) => ({
   creator: one(users, { fields: [threads.creatorId], references: [users.id] }),
   fan: one(users, { fields: [threads.fanId], references: [users.id] }),
   messages: many(messages),
+  callSessions: many(callSessions),
 }));
 
 export const messagesRelations = relations(messages, ({ one }) => ({
   thread: one(threads, { fields: [messages.threadId], references: [threads.id] }),
   sender: one(users, { fields: [messages.senderId], references: [users.id] }),
   post: one(posts, { fields: [messages.postId], references: [posts.id] }),
+}));
+
+export const callSessionsRelations = relations(callSessions, ({ one }) => ({
+  thread: one(threads, {
+    fields: [callSessions.threadId],
+    references: [threads.id],
+  }),
+  fan: one(users, {
+    fields: [callSessions.fanId],
+    references: [users.id],
+    relationName: "fan_call_sessions",
+  }),
+  creator: one(users, {
+    fields: [callSessions.creatorId],
+    references: [users.id],
+    relationName: "creator_call_sessions",
+  }),
 }));
 
 export const blurJobsRelations = relations(blurJobs, ({ one }) => ({

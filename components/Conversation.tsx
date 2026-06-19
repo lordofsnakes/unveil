@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { ConversationProvider, useConversation } from "@elevenlabs/react";
 import {
   ArrowLeft,
-  CreditCard,
+  ExternalLink,
   Lock,
+  Mic,
+  MicOff,
   Phone,
   Plus,
   Send,
@@ -27,14 +30,6 @@ type MyPost = {
   mediaType: "image" | "video";
   previewUrl: string | null;
 };
-
-function formatUsd(value: number) {
-  if (!Number.isFinite(value)) return "$0.00";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(value);
-}
 
 function formatDuration(seconds: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(
@@ -394,7 +389,51 @@ function PpvCard({ msg }: { msg: ConversationPpvMsg }) {
   );
 }
 
-function CallSheet({
+type CallPhase =
+  | "idle"
+  | "permission"
+  | "starting"
+  | "connecting"
+  | "connected"
+  | "settling"
+  | "ended"
+  | "failed";
+
+type CallActionBody = {
+  action: "start" | "connect" | "reserve" | "settle" | "release";
+  callId: string;
+  tick?: number;
+  chargedSeconds?: number;
+  elapsedSeconds?: number;
+  conversationId?: string;
+  elevenConversationId?: string;
+  connectedAt?: string;
+  endedAt?: string;
+};
+
+type ConversationTokenResponse = {
+  token?: string;
+  conversationToken?: string;
+  conversation_token?: string;
+  serverLocation?: string;
+  environment?: string;
+};
+
+function CallSheet(props: {
+  threadId: string;
+  name: string;
+  avatar: string | null;
+  isBot: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <ConversationProvider>
+      <CallSheetSession {...props} />
+    </ConversationProvider>
+  );
+}
+
+function CallSheetSession({
   threadId,
   name,
   avatar,
@@ -407,43 +446,86 @@ function CallSheet({
   isBot: boolean;
   onClose: () => void;
 }) {
-  const [phase, setPhase] = useState<
-    "idle" | "ringing" | "connected" | "settling" | "ended"
-  >("idle");
+  const { startSession, endSession, isMuted, setMuted } = useConversation();
+  const [phase, setPhase] = useState<CallPhase>("idle");
   const [seconds, setSeconds] = useState(0);
   const [chargedSeconds, setChargedSeconds] = useState(0);
-  const [balance, setBalance] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paymentReceipt, setPaymentReceipt] = useState<{
+    hash: string;
+    url: string;
+  } | null>(null);
   const callIdRef = useRef<string | null>(null);
-  const ringTimerRef = useRef<number | null>(null);
-  const rate = isBot ? 0 : 0.05;
+  const conversationIdRef = useRef<string | null>(null);
+  const phaseRef = useRef<CallPhase>("idle");
+  const rate = 0.05;
   const secondsRef = useRef(0);
+  const reserveTickRef = useRef(0);
+  const reservedSecondsRef = useRef(0);
+  const reserveIntervalRef = useRef<number | null>(null);
+  const reservePromiseRef = useRef<Promise<boolean> | null>(null);
+  const settlePromiseRef = useRef<Promise<void> | null>(null);
+  const mountedRef = useRef(true);
 
-  // Current wallet balance, shown on the sheet so the fan knows what they have
-  // to spend before starting and drains live while the call is connected.
-  useEffect(() => {
-    if (isBot) {
-      setBalance(null);
-      return;
-    }
-    let live = true;
-    fetch("/api/account", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (live && d?.account)
-          setBalance(Number(d.account.availableBalance ?? 0));
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [isBot]);
+  const setCallPhase = useCallback((nextPhase: CallPhase) => {
+    phaseRef.current = nextPhase;
+    setPhase(nextPhase);
+  }, []);
 
   function nextCallId() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
       return crypto.randomUUID();
     }
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function resetCallRefs() {
+    callIdRef.current = null;
+    conversationIdRef.current = null;
+    reserveTickRef.current = 0;
+    reservedSecondsRef.current = 0;
+    reservePromiseRef.current = null;
+  }
+
+  function errorMessage(body: Record<string, unknown>, fallback: string) {
+    return typeof body.detail === "string"
+      ? body.detail
+      : typeof body.error === "string"
+        ? body.error
+        : typeof body.message === "string"
+          ? body.message
+          : fallback;
+  }
+
+  function microphoneErrorMessage(err: unknown) {
+    if (err instanceof DOMException) {
+      console.error("Microphone permission failed", {
+        name: err.name,
+        message: err.message,
+      });
+
+      if (err.name === "NotAllowedError" || err.name === "SecurityError") {
+        return `Microphone blocked by the browser or OS (${err.name}). Check Chrome site settings and macOS microphone permission for this browser.`;
+      }
+      if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        return "No microphone was found. Check the selected input device in browser settings.";
+      }
+      if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        return "The microphone is allowed but cannot be opened. Close other apps using it, then retry.";
+      }
+      if (err.name === "OverconstrainedError") {
+        return "The selected microphone does not satisfy the requested audio constraints.";
+      }
+      return `Microphone failed (${err.name}): ${err.message || "unknown error"}`;
+    }
+
+    if (err instanceof Error) {
+      console.error("Microphone permission failed", err);
+      return err.message;
+    }
+
+    console.error("Microphone permission failed", err);
+    return "Could not start the microphone.";
   }
 
   useEffect(() => {
@@ -455,122 +537,496 @@ function CallSheet({
     return () => window.clearInterval(id);
   }, [phase]);
 
-  const settleCall = useCallback(async () => {
-    if (!callIdRef.current) return;
-    const duration = secondsRef.current;
-    setPhase("settling");
-    setError(null);
-    if (duration < 1) {
-      setPhase("idle");
-      return;
+  const clearReserveInterval = useCallback(() => {
+    if (reserveIntervalRef.current) {
+      window.clearInterval(reserveIntervalRef.current);
+      reserveIntervalRef.current = null;
     }
-    if (isBot) {
-      setChargedSeconds(duration);
-      setPhase("ended");
-      callIdRef.current = null;
-      return;
-    }
-    try {
+  }, []);
+
+  const postCallAction = useCallback(
+    async (body: CallActionBody, options?: { keepalive?: boolean }) => {
       const res = await fetch(`/api/messages/${threadId}/call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callId: callIdRef.current,
-          tick: 1,
-          chargedSeconds: duration,
-        }),
+        keepalive: options?.keepalive,
+        body: JSON.stringify(body),
       });
-      const body = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        detail?: string;
-        balance?: string;
-        chargedSeconds?: number;
-      };
-      if (res.status === 402) {
-        setError(body.detail ?? "Add funds to complete this call.");
-        setPhase("idle");
-        return;
-      }
-      if (!res.ok) {
-        setError(body.error ?? "Could not complete this call.");
-        setPhase("idle");
-        return;
-      }
-      const billedSeconds = body.chargedSeconds ?? duration;
-      const newBalance =
-        body.balance != null ? Number(body.balance) : null;
-      setChargedSeconds(billedSeconds);
-      if (newBalance != null) setBalance(newBalance);
-      window.dispatchEvent(new Event("veil:balance-changed"));
-      setPhase("ended");
-    } finally {
-      callIdRef.current = null;
-    }
-  }, [isBot, threadId]);
+      const parsed = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const unsupported =
+        res.status === 400 &&
+        (parsed.error === "Invalid call action" || parsed.error === "Invalid action");
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      if (ringTimerRef.current) window.clearTimeout(ringTimerRef.current);
-    };
+      return {
+        ok: res.ok || unsupported,
+        supported: !unsupported,
+        status: res.status,
+        body: parsed,
+      };
+    },
+    [threadId],
+  );
+
+  const releaseUnconnectedCall = useCallback(
+    async (options?: { keepalive?: boolean }) => {
+      const callId = callIdRef.current;
+      if (!callId) return;
+      try {
+        await postCallAction(
+          {
+            action: "release",
+            callId,
+            elapsedSeconds: 0,
+            endedAt: new Date().toISOString(),
+          },
+          options,
+        );
+      } catch {
+        // Keep local cleanup moving even if the best-effort release is dropped.
+      } finally {
+        clearReserveInterval();
+        resetCallRefs();
+      }
+    },
+    [clearReserveInterval, postCallAction],
+  );
+
+  const stopElevenLabsSession = useCallback(() => {
+    try {
+      endSession();
+    } catch {
+      // Duplicate end calls are harmless; keep local cleanup moving.
+    }
+  }, [endSession]);
+
+  const reserveCallSeconds = useCallback(
+    async (secondsToReserve: number) => {
+      if (!callIdRef.current || secondsToReserve < 1) return true;
+      if (reservePromiseRef.current) {
+        const previousOk = await reservePromiseRef.current;
+        if (!previousOk) return false;
+      }
+
+      const promise = (async () => {
+        if (!callIdRef.current) return true;
+        reserveTickRef.current += 1;
+        const tick = reserveTickRef.current;
+
+        const result = await postCallAction({
+          action: "reserve",
+          callId: callIdRef.current,
+          tick,
+          chargedSeconds: secondsToReserve,
+          elapsedSeconds: secondsRef.current,
+          conversationId: conversationIdRef.current ?? undefined,
+          elevenConversationId: conversationIdRef.current ?? undefined,
+        });
+
+        if (result.status === 402) {
+          setError(errorMessage(result.body, "Add funds to continue this call."));
+          return false;
+        }
+        if (!result.ok) {
+          setError(errorMessage(result.body, "Could not reserve this call."));
+          return false;
+        }
+
+        const reservedSeconds =
+          typeof result.body.chargedSeconds === "number"
+            ? result.body.chargedSeconds
+            : secondsToReserve;
+        reservedSecondsRef.current += reservedSeconds;
+        window.dispatchEvent(new Event("veil:balance-changed"));
+        return true;
+      })();
+
+      reservePromiseRef.current = promise;
+      try {
+        return await promise;
+      } finally {
+        if (reservePromiseRef.current === promise) reservePromiseRef.current = null;
+      }
+    },
+    [postCallAction],
+  );
+
+  const settleCall = useCallback(
+    async (options?: { keepalive?: boolean }) => {
+      if (settlePromiseRef.current) return settlePromiseRef.current;
+      if (!callIdRef.current) return;
+
+      const promise = (async () => {
+        const duration = secondsRef.current;
+        const callId = callIdRef.current;
+        clearReserveInterval();
+        if (mountedRef.current) {
+          setCallPhase("settling");
+          setError(null);
+        }
+        if (!callId) return;
+        if (duration < 1) {
+          await releaseUnconnectedCall(options);
+          if (mountedRef.current) setCallPhase("ended");
+          return;
+        }
+
+        try {
+          if (reservePromiseRef.current) await reservePromiseRef.current;
+          const remainingSeconds = duration - reservedSecondsRef.current;
+          if (remainingSeconds > 0) {
+            const reserved = await reserveCallSeconds(remainingSeconds);
+            if (!reserved && reservedSecondsRef.current < 1) {
+              if (mountedRef.current) setCallPhase("failed");
+              return;
+            }
+          }
+
+          const result = await postCallAction(
+            {
+              action: "settle",
+              callId,
+              chargedSeconds: duration,
+              elapsedSeconds: duration,
+              conversationId: conversationIdRef.current ?? undefined,
+              elevenConversationId: conversationIdRef.current ?? undefined,
+              endedAt: new Date().toISOString(),
+            },
+            options,
+          );
+          if (result.status === 402) {
+            if (mountedRef.current) {
+              setError(errorMessage(result.body, "Add funds to complete this call."));
+              setCallPhase("failed");
+            }
+            return;
+          }
+          if (!result.ok) {
+            if (mountedRef.current) {
+              setError(errorMessage(result.body, "Could not complete this call."));
+              setCallPhase("failed");
+            }
+            return;
+          }
+
+          const settledSeconds =
+            typeof result.body.chargedSeconds === "number"
+              ? result.body.chargedSeconds
+              : duration;
+          const paymentTxHash =
+            typeof result.body.paymentTxHash === "string"
+              ? result.body.paymentTxHash
+              : null;
+          const paymentTxUrl =
+            typeof result.body.paymentTxUrl === "string"
+              ? result.body.paymentTxUrl
+              : null;
+
+          if (mountedRef.current) {
+            setChargedSeconds(settledSeconds);
+            setPaymentReceipt(
+              paymentTxHash && paymentTxUrl
+                ? { hash: paymentTxHash, url: paymentTxUrl }
+                : null,
+            );
+            window.dispatchEvent(new Event("veil:balance-changed"));
+            setCallPhase("ended");
+          }
+        } finally {
+          resetCallRefs();
+        }
+      })();
+
+      settlePromiseRef.current = promise;
+      try {
+        await promise;
+      } finally {
+        if (settlePromiseRef.current === promise) settlePromiseRef.current = null;
+      }
+    },
+    [
+      clearReserveInterval,
+      postCallAction,
+      releaseUnconnectedCall,
+      reserveCallSeconds,
+      setCallPhase,
+    ],
+  );
+
+  const markConnected = useCallback(
+    ({
+      callId,
+      conversationId,
+      connectedAt,
+    }: {
+      callId: string;
+      conversationId: string;
+      connectedAt: string;
+    }) => {
+      if (callIdRef.current !== callId) return;
+      conversationIdRef.current = conversationId;
+      setError(null);
+      setCallPhase("connected");
+      void postCallAction({
+        action: "connect",
+        callId,
+        conversationId,
+        elevenConversationId: conversationId,
+        connectedAt,
+      }).catch(() => undefined);
+    },
+    [postCallAction, setCallPhase],
+  );
+
+  const failOrSettle = useCallback(
+    (message: string) => {
+      if (!callIdRef.current || phaseRef.current === "settling") return;
+      if (secondsRef.current > 0) {
+        setError(message);
+        void settleCall();
+        return;
+      }
+      stopElevenLabsSession();
+      void releaseUnconnectedCall().finally(() => {
+        if (!mountedRef.current) return;
+        setError(message);
+        setCallPhase("failed");
+      });
+    },
+    [releaseUnconnectedCall, setCallPhase, settleCall, stopElevenLabsSession],
+  );
+
+  const fetchConversationToken = useCallback(
+    async (callId: string) => {
+      const params = new URLSearchParams({ threadId, callId });
+      const res = await fetch(`/api/elevenlabs/conversation-token?${params}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as ConversationTokenResponse &
+        Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error(errorMessage(body, "Could not start the voice session."));
+      }
+      const token = body.conversationToken ?? body.token ?? body.conversation_token;
+      if (!token) throw new Error("Voice session token was missing.");
+      return {
+        token,
+        serverLocation: body.serverLocation,
+        environment: body.environment,
+      };
+    },
+    [threadId],
+  );
+
+  const requestMicrophone = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone access is not available in this browser.");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
   }, []);
 
-  const total = `$${(chargedSeconds * rate).toFixed(2)}`;
-  const estimatedCost = seconds * rate;
-  const estimatedTotal = `$${estimatedCost.toFixed(2)}`;
-  const isCalling = phase === "ringing" || phase === "connected";
-  // What the fan has left to spend right now (drains live during the call).
-  const remainingBalance =
-    balance == null ? null : Math.max(0, balance - estimatedCost);
-  // Can't afford even a single second — block the call before it starts.
-  const cannotAfford = !isBot && balance != null && balance < rate;
-  const statusText =
-    phase === "ringing"
-      ? isBot
-        ? "Calling AI..."
-        : "Ringing..."
-      : phase === "connected"
-        ? isBot
-          ? "AI connected"
-          : "Connected"
-        : phase === "settling"
-          ? "Ending..."
-          : phase === "ended"
-            ? "Call ended"
-            : isBot
-              ? "Ready for AI call"
-              : "Ready to call";
-
-  const startCall = () => {
-    if (!isBot && cannotAfford) {
-      setError("Add funds to start a call.");
+  useEffect(() => {
+    if (phase !== "connected") {
+      clearReserveInterval();
       return;
     }
+
+    reserveIntervalRef.current = window.setInterval(() => {
+      void reserveCallSeconds(5).then((ok) => {
+        if (!ok) {
+          clearReserveInterval();
+          stopElevenLabsSession();
+          void settleCall();
+        }
+      });
+    }, 5000);
+
+    return clearReserveInterval;
+  }, [
+    clearReserveInterval,
+    phase,
+    reserveCallSeconds,
+    settleCall,
+    stopElevenLabsSession,
+  ]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const previousOverflow = document.body.style.overflow;
+    const finishActiveCall = () => {
+      if (!callIdRef.current) return;
+      if (secondsRef.current > 0) {
+        stopElevenLabsSession();
+        void settleCall({ keepalive: true });
+        return;
+      }
+      stopElevenLabsSession();
+      void releaseUnconnectedCall({ keepalive: true });
+    };
+    const onPageHide = () => finishActiveCall();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") finishActiveCall();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      mountedRef.current = false;
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      finishActiveCall();
+      clearReserveInterval();
+    };
+  }, [clearReserveInterval, releaseUnconnectedCall, settleCall, stopElevenLabsSession]);
+
+  const total = `$${(chargedSeconds * rate).toFixed(2)}`;
+  const estimatedTotal = `$${(seconds * rate).toFixed(2)}`;
+  const isCalling =
+    phase === "permission" ||
+    phase === "starting" ||
+    phase === "connecting" ||
+    phase === "connected";
+  const canMute = phase === "connected";
+  const statusText =
+    phase === "permission"
+      ? "Allow microphone"
+      : phase === "starting"
+        ? "Preparing call..."
+        : phase === "connecting"
+          ? "Connecting..."
+          : phase === "connected"
+            ? isMuted
+              ? "Connected · muted"
+              : "Connected"
+            : phase === "settling"
+              ? "Ending..."
+              : phase === "failed"
+                ? "Call failed"
+                : chargedSeconds > 0 || phase === "ended"
+                  ? "Call ended"
+                  : isBot
+                    ? "Ready for AI call"
+                    : "Ready to call";
+
+  const startCall = async () => {
+    if (isCalling || phase === "settling") return;
     setError(null);
+    setPaymentReceipt(null);
     setChargedSeconds(0);
     setSeconds(0);
     secondsRef.current = 0;
-    callIdRef.current = nextCallId();
-    setPhase("ringing");
-    if (ringTimerRef.current) window.clearTimeout(ringTimerRef.current);
-    ringTimerRef.current = window.setTimeout(() => {
-      ringTimerRef.current = null;
-      setPhase("connected");
-    }, 2400);
+    reserveTickRef.current = 0;
+    reservedSecondsRef.current = 0;
+    clearReserveInterval();
+    const callId = nextCallId();
+    callIdRef.current = callId;
+    setCallPhase("permission");
+
+    try {
+      await requestMicrophone();
+      setCallPhase("starting");
+      const token = await fetchConversationToken(callId);
+      const startResult = await postCallAction({ action: "start", callId });
+      if (!startResult.ok) {
+        if (startResult.status === 402) {
+          throw new Error(errorMessage(startResult.body, "Add funds to start this call."));
+        }
+        if (startResult.supported) {
+          throw new Error(errorMessage(startResult.body, "Could not reserve this call."));
+        }
+      }
+
+      setCallPhase("connecting");
+      startSession({
+        conversationToken: token.token,
+        connectionType: "webrtc",
+        serverLocation: token.serverLocation,
+        environment: token.environment,
+        onConnect: ({ conversationId }) => {
+          markConnected({
+            callId,
+            conversationId,
+            connectedAt: new Date().toISOString(),
+          });
+        },
+        onDisconnect: () => {
+          if (callIdRef.current !== callId || phaseRef.current === "settling") return;
+          if (secondsRef.current > 0) {
+            void settleCall();
+          } else {
+            void releaseUnconnectedCall().finally(() => {
+              if (mountedRef.current) setCallPhase("ended");
+            });
+          }
+        },
+        onError: (message) => {
+          failOrSettle(message || "Voice session failed.");
+        },
+      });
+    } catch (err) {
+      stopElevenLabsSession();
+      await releaseUnconnectedCall();
+      setError(microphoneErrorMessage(err));
+      setCallPhase("failed");
+    }
   };
 
   const stopCall = () => {
-    if (phase === "ringing") {
-      if (ringTimerRef.current) window.clearTimeout(ringTimerRef.current);
-      ringTimerRef.current = null;
-      callIdRef.current = null;
-      setPhase("idle");
+    if (
+      phase === "permission" ||
+      phase === "starting" ||
+      phase === "connecting"
+    ) {
+      stopElevenLabsSession();
+      void releaseUnconnectedCall().finally(() => {
+        if (mountedRef.current) setCallPhase("ended");
+      });
       return;
     }
-    if (phase === "connected") void settleCall();
+    if (phase === "connected") {
+      stopElevenLabsSession();
+      void settleCall();
+    }
   };
+
+  const toggleMute = () => {
+    if (!canMute) return;
+    try {
+      setMuted(!isMuted);
+    } catch {
+      setError("Could not update microphone mute.");
+    }
+  };
+
+  const closeCallSheet = () => {
+    if (phase === "settling") return;
+    if (phase === "connected") {
+      stopElevenLabsSession();
+      void settleCall().finally(onClose);
+      return;
+    }
+    if (isCalling) {
+      stopElevenLabsSession();
+      void releaseUnconnectedCall().finally(onClose);
+      return;
+    }
+    onClose();
+  };
+
+  const primaryLabel =
+    phase === "settling"
+      ? "Ending..."
+      : isCalling
+        ? phase === "connected"
+          ? "End call"
+          : "Cancel"
+        : phase === "failed"
+          ? "Retry call"
+          : isBot
+            ? "Start AI call"
+            : "Start call";
 
   return (
     <div
@@ -584,7 +1040,7 @@ function CallSheet({
         aria-label={isBot ? "Close AI call" : "Close paid call"}
         className="absolute inset-0 cursor-default bg-black/60"
         style={{ animation: "vscrim .2s ease both" }}
-        onClick={onClose}
+        onClick={closeCallSheet}
       />
       <section
         className="bg-surface border-hairline relative w-full max-w-md rounded-t-md border-t px-5 pt-5 text-center shadow-card"
@@ -595,7 +1051,7 @@ function CallSheet({
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={closeCallSheet}
           aria-label="Close"
           className="text-muted hover:text-text absolute right-4 top-4 flex size-9 items-center justify-center"
         >
@@ -604,80 +1060,59 @@ function CallSheet({
         <Avatar name={name} src={avatar} size="xl" verified />
         <h2 className="mt-3 text-xl font-bold">{name}</h2>
         <p className="text-faint mt-1 text-sm">{statusText}</p>
-        {phase === "ended" ? (
-          <div className="border-hairline bg-bg mt-6 rounded-md border px-5 py-4 text-left">
-            <div className="flex items-center justify-between py-1.5">
-              <span className="text-muted text-[13.5px]">You spent</span>
-              <span className="tabular text-text text-[15px] font-semibold">
-                {total}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-1.5">
-              <span className="text-muted text-[13.5px]">Duration</span>
-              <span className="tabular text-text text-[14px]">
-                {formatDuration(chargedSeconds)} · {isBot ? "AI call" : "$0.05/sec"}
-              </span>
-            </div>
-            {!isBot && balance != null && (
-              <div className="border-hairline mt-1.5 flex items-center justify-between border-t pt-3">
-                <span className="text-faint flex items-center gap-1.5 text-[13.5px]">
-                  <CreditCard size={14} />
-                  New balance
-                </span>
-                <span className="tabular text-text text-[15px] font-semibold">
-                  {formatUsd(balance)}
-                </span>
-              </div>
+        <p className="text-faint mx-auto mt-1 max-w-[260px] text-xs">
+          AI voice call powered by ElevenLabs
+        </p>
+        <div className="border-hairline bg-bg mt-6 rounded-md border px-4 py-5">
+          <div className="tabular text-[42px] font-bold leading-none">
+            {formatDuration(seconds)}
+          </div>
+          <div className="text-muted mt-2 text-sm">
+            {chargedSeconds > 0 ? (
+              <>
+                Total <span className="tabular text-text">{total}</span>
+              </>
+            ) : (
+              <>
+                Rate <span className="tabular text-text">$0.05/sec</span>
+              </>
             )}
           </div>
-        ) : (
-          <>
-            <div className="border-hairline bg-bg mt-6 rounded-md border px-4 py-5">
-              <div className="tabular text-[42px] font-bold leading-none">
-                {formatDuration(seconds)}
-              </div>
-              <div className="text-muted mt-2 text-sm">
-                {phase === "connected" ? (
-                  isBot ? (
-                    <>Live AI call</>
-                  ) : (
-                    <>
-                      Charging{" "}
-                      <span className="tabular text-text">{estimatedTotal}</span>
-                    </>
-                  )
-                ) : (
-                  <>
-                    {isBot ? "No wallet charge" : "Rate"}{" "}
-                    {!isBot && <span className="tabular text-text">$0.05/sec</span>}
-                  </>
-                )}
-              </div>
+          {phase === "connected" && (
+            <div className="text-faint mt-1 text-xs">
+              Estimated <span className="tabular">{estimatedTotal}</span>
             </div>
-            {!isBot && (
-              <div className="text-faint mt-3 flex items-center justify-center gap-1.5 text-[12.5px]">
-                <CreditCard size={14} />
-                <span>
-                  {phase === "connected" ? "Balance remaining" : "Wallet balance"}{" "}
-                  ·{" "}
-                  <span className="tabular text-muted">
-                    {(phase === "connected" ? remainingBalance : balance) == null
-                      ? "..."
-                      : formatUsd(
-                          (phase === "connected" ? remainingBalance : balance) ??
-                            0,
-                        )}
-                  </span>
-                </span>
-              </div>
-            )}
-            {cannotAfford && phase === "idle" && (
-              <p className="text-primary mt-2 text-[12.5px] font-semibold">
-                Add funds to start a call.
-              </p>
-            )}
-          </>
-        )}
+          )}
+          {paymentReceipt && chargedSeconds > 0 && (
+            <a
+              href={paymentReceipt.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary mt-3 inline-flex items-center justify-center gap-1.5 text-xs font-semibold"
+            >
+              <span>
+                Receipt {paymentReceipt.hash.slice(0, 8)}...
+                {paymentReceipt.hash.slice(-6)}
+              </span>
+              <ExternalLink size={13} aria-hidden />
+            </a>
+          )}
+        </div>
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={toggleMute}
+            disabled={!canMute}
+            aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
+            title={isMuted ? "Unmute microphone" : "Mute microphone"}
+            className="border-hairline text-text flex size-11 items-center justify-center rounded-full border disabled:opacity-40"
+            style={{
+              background: isMuted ? "var(--surface-3)" : "var(--surface-2)",
+            }}
+          >
+            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+          </button>
+        </div>
         {error && (
           <p className="text-danger mt-4 text-sm font-semibold" role="alert">
             {error}
@@ -685,34 +1120,16 @@ function CallSheet({
         )}
         <button
           type="button"
-          onClick={
-            phase === "ended"
-              ? onClose
-              : isCalling
-                ? stopCall
-                : startCall
-          }
-          disabled={
-            phase === "settling" || (phase === "idle" && cannotAfford)
-          }
-          className="mt-5 flex h-[52px] w-full items-center justify-center rounded-pill text-base font-bold disabled:opacity-60"
+          onClick={isCalling ? stopCall : startCall}
+          disabled={phase === "settling"}
+          className="mt-5 flex h-[52px] w-full items-center justify-center rounded-pill text-base font-bold"
           style={{
             background: isCalling ? "var(--surface-3)" : "var(--primary)",
             color: isCalling ? "var(--text)" : "var(--primary-fg)",
             boxShadow: isCalling ? "none" : "var(--shadow-cta)",
           }}
         >
-          {phase === "settling"
-            ? "Ending..."
-            : phase === "ended"
-              ? "Done"
-              : isCalling
-                ? phase === "ringing"
-                  ? "Cancel"
-                  : "End call"
-                : isBot
-                  ? "Start AI call"
-                  : "Start call"}
+          {primaryLabel}
         </button>
       </section>
     </div>
