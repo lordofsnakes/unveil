@@ -165,7 +165,7 @@ export function Conversation({
             className="text-muted flex size-[38px] items-center justify-center disabled:opacity-40"
             aria-label={
               thread.isBot
-                ? "Start AI call"
+                ? "Start call"
                 : thread.viewerIsCreator
                   ? "Paid calls are started by fans"
                   : "Start paid call"
@@ -438,6 +438,7 @@ function CallSheetSession({
   const [seconds, setSeconds] = useState(0);
   const [chargedSeconds, setChargedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [backgroundSettling, setBackgroundSettling] = useState(false);
   const [paymentReceipt, setPaymentReceipt] = useState<{
     hash: string;
     url: string;
@@ -638,16 +639,18 @@ function CallSheetSession({
   );
 
   const settleCall = useCallback(
-    async (options?: { keepalive?: boolean }) => {
+    async (options?: { keepalive?: boolean; background?: boolean }) => {
       if (settlePromiseRef.current) return settlePromiseRef.current;
       if (!callIdRef.current) return;
 
       const promise = (async () => {
         const duration = secondsRef.current;
         const callId = callIdRef.current;
+        const isBackground = options?.background === true;
         clearReserveInterval();
         if (mountedRef.current) {
-          setCallPhase("settling");
+          setBackgroundSettling(isBackground);
+          if (!isBackground) setCallPhase("settling");
           setError(null);
         }
         if (!callId) return;
@@ -683,14 +686,14 @@ function CallSheetSession({
           if (result.status === 402) {
             if (mountedRef.current) {
               setError(errorMessage(result.body, "Add funds to complete this call."));
-              setCallPhase("failed");
+              if (!isBackground) setCallPhase("failed");
             }
             return;
           }
           if (!result.ok) {
             if (mountedRef.current) {
               setError(errorMessage(result.body, "Could not complete this call."));
-              setCallPhase("failed");
+              if (!isBackground) setCallPhase("failed");
             }
             return;
           }
@@ -719,6 +722,7 @@ function CallSheetSession({
             setCallPhase("ended");
           }
         } finally {
+          if (mountedRef.current) setBackgroundSettling(false);
           resetCallRefs();
         }
       })();
@@ -766,7 +770,13 @@ function CallSheetSession({
 
   const failOrSettle = useCallback(
     (message: string) => {
-      if (!callIdRef.current || phaseRef.current === "settling") return;
+      if (
+        !callIdRef.current ||
+        phaseRef.current === "settling" ||
+        phaseRef.current === "ended"
+      ) {
+        return;
+      }
       if (secondsRef.current > 0) {
         setError(message);
         void settleCall();
@@ -902,6 +912,7 @@ function CallSheetSession({
     setError(null);
     setPaymentReceipt(null);
     setChargedSeconds(0);
+    setBackgroundSettling(false);
     setSeconds(0);
     secondsRef.current = 0;
     reserveTickRef.current = 0;
@@ -939,7 +950,13 @@ function CallSheetSession({
           });
         },
         onDisconnect: () => {
-          if (callIdRef.current !== callId || phaseRef.current === "settling") return;
+          if (
+            callIdRef.current !== callId ||
+            phaseRef.current === "settling" ||
+            phaseRef.current === "ended"
+          ) {
+            return;
+          }
           if (secondsRef.current > 0) {
             void settleCall();
           } else {
@@ -967,6 +984,7 @@ function CallSheetSession({
       phase === "connecting"
     ) {
       stopElevenLabsSession();
+      setCallPhase("ended");
       void releaseUnconnectedCall().finally(() => {
         if (mountedRef.current) setCallPhase("ended");
       });
@@ -974,7 +992,8 @@ function CallSheetSession({
     }
     if (phase === "connected") {
       stopElevenLabsSession();
-      void settleCall();
+      setCallPhase("ended");
+      void settleCall({ background: true });
     }
   };
 
@@ -991,12 +1010,16 @@ function CallSheetSession({
     if (phase === "settling") return;
     if (phase === "connected") {
       stopElevenLabsSession();
-      void settleCall().finally(onClose);
+      setCallPhase("ended");
+      void settleCall({ background: true });
+      onClose();
       return;
     }
     if (isCalling) {
       stopElevenLabsSession();
-      void releaseUnconnectedCall().finally(onClose);
+      setCallPhase("ended");
+      void releaseUnconnectedCall();
+      onClose();
       return;
     }
     onClose();
@@ -1011,9 +1034,9 @@ function CallSheetSession({
           : "Cancel"
         : phase === "failed"
           ? "Retry call"
-          : isBot
-            ? "Start AI call"
-            : "Start call";
+          : phase === "ended"
+            ? "Call ended"
+          : "Start call";
 
   return (
     <div
@@ -1047,9 +1070,6 @@ function CallSheetSession({
         <Avatar name={name} src={avatar} size="xl" verified />
         <h2 className="mt-3 text-xl font-bold">{name}</h2>
         <p className="text-faint mt-1 text-sm">{statusText}</p>
-        <p className="text-faint mx-auto mt-1 max-w-[260px] text-xs">
-          AI voice call powered by ElevenLabs
-        </p>
         <div className="border-hairline bg-bg mt-6 rounded-md border px-4 py-5">
           <div className="tabular text-[42px] font-bold leading-none">
             {formatDuration(seconds)}
@@ -1108,7 +1128,7 @@ function CallSheetSession({
         <button
           type="button"
           onClick={isCalling ? stopCall : startCall}
-          disabled={phase === "settling"}
+          disabled={phase === "settling" || backgroundSettling || phase === "ended"}
           className="mt-5 flex h-[52px] w-full items-center justify-center rounded-pill text-base font-bold"
           style={{
             background: isCalling ? "var(--surface-3)" : "var(--primary)",
