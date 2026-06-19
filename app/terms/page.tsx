@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms that govern your use of Veil.",
+  description: "The terms that govern your use of Unveil.",
 };
 
 export default function TermsPage() {
@@ -21,7 +21,7 @@ export default function TermsPage() {
 
       <div className="text-muted mt-6 flex flex-col gap-5 text-[15px] leading-relaxed">
         <p>
-          Veil is an 18+ platform for paid, premium content. By creating an
+          Unveil is an 18+ platform for paid, premium content. By creating an
           account or using the service you confirm that you are at least 18 years
           old and agree to these terms.
         </p>

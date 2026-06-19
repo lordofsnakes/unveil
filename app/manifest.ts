@@ -9,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/",
     display: "standalone",
     // Match the layout viewport themeColor so the splash + status bar agree.
-    background_color: "#121012",
-    theme_color: "#121012",
+    background_color: "#000000",
+    theme_color: "#000000",
     orientation: "portrait",
     icons: [
       {

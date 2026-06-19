@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "How Veil collects, uses, and protects your data.",
+  description: "How Unveil collects, uses, and protects your data.",
 };
 
 export default function PrivacyPage() {
@@ -22,7 +22,7 @@ export default function PrivacyPage() {
       <div className="text-muted mt-6 flex flex-col gap-5 text-[15px] leading-relaxed">
         <p>
           This policy explains what we collect, why, and the choices you have.
-          We collect only what we need to run Veil.
+          We collect only what we need to run Unveil.
         </p>
         <section>
           <h2 className="text-text mb-1 text-base font-semibold">

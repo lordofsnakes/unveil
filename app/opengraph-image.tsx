@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 
 // Branded social-share card. Next wires this in as og:image AND twitter:image
 // for every route that doesn't define its own opengraph-image.
-export const alt = "Veil — lift the veil";
+export const alt = "Unveil — lift the veil";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -30,18 +30,18 @@ export default function OpengraphImage() {
               height: 84,
               borderRadius: 9999,
               background:
-                "conic-gradient(from 215deg, #c2143b, #7a0c24 55%, #c2143b)",
+                "radial-gradient(circle at 35% 30%, #e84b6e, #c2143b 45%, #7a0c24)",
             }}
           />
           <div
             style={{
               fontSize: 108,
               fontWeight: 800,
-              letterSpacing: 18,
+              letterSpacing: 14,
               paddingLeft: 6,
             }}
           >
-            VEIL
+            UNVEIL
           </div>
         </div>
         <div
