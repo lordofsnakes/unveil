@@ -9,14 +9,11 @@
     "db:push": "dotenv -e .env.local -- drizzle-kit push",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "tempo:wallets:migrate": "dotenv -e .env.local -- tsx scripts/migrate-tempo-wallets.ts",
     "key:init": "dotenv -e .env.local -- tsx scripts/init-platform-key.ts",
     "key:rotate": "dotenv -e .env.local -- tsx scripts/init-platform-key.ts --rotate",
     "seed": "dotenv -e .env.local -- tsx scripts/seed.ts",
-    "token:create": "dotenv -e .env.local -- tsx scripts/create-token.ts",
-    "blur:test": "dotenv -e .env.local -- tsx scripts/blur-image-test.ts",
-    "blur:video": "dotenv -e .env.local -- tsx scripts/blur-video-test.ts",
-    "blur:video:selftest": "tsx scripts/blur-video-selftest.ts",
-    "blur:webhook:test": "tsx scripts/blur-webhook-test.ts"
+    "token:create": "dotenv -e .env.local -- tsx scripts/create-token.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.5",
