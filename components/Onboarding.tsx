@@ -10,6 +10,8 @@ type AuthMode = "sign-in" | "sign-up";
 type OAuthStrategy = "oauth_google" | "oauth_x";
 type SignUpStep = "credentials" | "verification";
 
+const OAUTH_STATE_KEY_PREFIXES = ["__clerk_oauth", "clerk_oauth", "oauth"];
+
 function errorMessage(err: unknown) {
   const clerkError = err as { errors?: { longMessage?: string; message?: string }[] };
   return (
@@ -17,6 +19,21 @@ function errorMessage(err: unknown) {
     clerkError.errors?.[0]?.message ??
     (err instanceof Error ? err.message : "Authentication failed")
   );
+}
+
+function clearStaleOAuthState() {
+  if (typeof window === "undefined") return;
+
+  for (const storage of [window.sessionStorage, window.localStorage]) {
+    for (let i = storage.length - 1; i >= 0; i -= 1) {
+      const key = storage.key(i);
+      if (!key) continue;
+      const normalized = key.toLowerCase();
+      if (OAUTH_STATE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
+        storage.removeItem(key);
+      }
+    }
+  }
 }
 
 export function Onboarding() {
@@ -40,6 +57,15 @@ export function Onboarding() {
   useEffect(() => {
     if (isSignedIn) router.replace("/");
   }, [isSignedIn, router]);
+
+  useEffect(() => {
+    const oauthError = new URLSearchParams(window.location.search).get("oauth_error");
+    if (!oauthError) return;
+
+    setIsPending(false);
+    setError(oauthError);
+    router.replace("/sign-in", { scroll: false });
+  }, [router]);
 
   if (isSignedIn) return null;
 
@@ -108,16 +134,24 @@ export function Onboarding() {
   }
 
   async function startOAuth(strategy: OAuthStrategy) {
-    if (!signInState.isLoaded) return;
+    if (!signInState.isLoaded || !signUpState.isLoaded) return;
     setIsPending(true);
     setError(null);
     try {
+      signInState.signIn.__internal_future.reset();
+      signUpState.signUp.__internal_future.reset();
+      clearStaleOAuthState();
+
+      const redirectUrl = new URL(
+        `/sso-callback?strategy=${encodeURIComponent(strategy)}`,
+        window.location.origin,
+      ).toString();
+      const redirectUrlComplete = new URL("/", window.location.origin).toString();
+
       await signInState.signIn.authenticateWithRedirect({
         strategy,
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/",
-        continueSignUp: true,
-        continueSignIn: true,
+        redirectUrl,
+        redirectUrlComplete,
       });
     } catch (err) {
       setError(errorMessage(err));
