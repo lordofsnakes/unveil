@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
-import { Bell } from "lucide-react";
+import { Bell, KeyRound } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomNav } from "@/components/BottomNav";
 import { ConnectButton } from "@/components/ConnectButton";
 import { EmptyState } from "@/components/EmptyState";
 import { timeAgo } from "@/lib/time";
+import { useAppAuth } from "@/components/useAppAuth";
+import { usePasskeyEnrollment } from "@/components/usePasskeyEnrollment";
 
 type Notif = {
   id: string;
@@ -20,8 +21,11 @@ type Notif = {
 };
 
 export default function NotificationsPage() {
-  const { isSignedIn } = useAuth();
+  const { isSignedIn } = useAppAuth();
   const connected = isSignedIn === true;
+  const passkey = usePasskeyEnrollment();
+  // Local-only synthetic notification — never returned by /api/notifications.
+  const showPasskeyNotif = passkey.canEnroll && !passkey.isDismissed;
   const [items, setItems] = useState<Notif[] | null>(null);
 
   useEffect(() => {
@@ -57,45 +61,108 @@ export default function NotificationsPage() {
             </div>
             <ConnectButton />
           </div>
-        ) : items === null ? (
-          <p className="text-faint mt-16 text-center text-sm">Loading…</p>
-        ) : items.length === 0 ? (
-          <div className="mt-10">
-            <EmptyState
-              icon={Bell}
-              title="Nothing yet"
-              body="When someone unveils one of your posts, you'll see it here."
-            />
-          </div>
         ) : (
-          <ul className="px-[18px]">
-            {items.map((n) => (
-              <li
-                key={n.id}
-                className="border-hairline flex items-center gap-3.5 border-b py-3.5"
-              >
-                <Avatar name={n.actor} src={n.avatar} size="lg" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14.5px] leading-snug">
-                    <span className="font-semibold">{n.actor}</span>{" "}
-                    <span className="text-muted">{n.action} </span>
-                    <span className="text-text">“{n.postTitle}”</span>
-                  </p>
-                  <p className="text-faint mt-0.5 text-[12px]">{timeAgo(n.at)}</p>
+          <>
+            {showPasskeyNotif && (
+              <ul className="px-[18px]">
+                <PasskeyNotifRow
+                  isPending={passkey.isPending}
+                  error={passkey.error}
+                  onAdd={passkey.enrollPasskey}
+                  onLater={passkey.dismissPrompt}
+                />
+              </ul>
+            )}
+            {items === null ? (
+              <p className="text-faint mt-16 text-center text-sm">Loading…</p>
+            ) : items.length === 0 ? (
+              showPasskeyNotif ? null : (
+                <div className="mt-10">
+                  <EmptyState
+                    icon={Bell}
+                    title="Nothing yet"
+                    body="When someone unveils one of your posts, you'll see it here."
+                  />
                 </div>
-                <span
-                  className="tabular text-[12.5px]"
-                  style={{ color: "var(--success)" }}
-                >
-                  {n.amount}
-                </span>
-              </li>
-            ))}
-          </ul>
+              )
+            ) : (
+              <ul className="px-[18px]">
+                {items.map((n) => (
+                  <li
+                    key={n.id}
+                    className="border-hairline flex items-center gap-3.5 border-b py-3.5"
+                  >
+                    <Avatar name={n.actor} src={n.avatar} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14.5px] leading-snug">
+                        <span className="font-semibold">{n.actor}</span>{" "}
+                        <span className="text-muted">{n.action} </span>
+                        <span className="text-text">“{n.postTitle}”</span>
+                      </p>
+                      <p className="text-faint mt-0.5 text-[12px]">
+                        {timeAgo(n.at)}
+                      </p>
+                    </div>
+                    <span
+                      className="tabular text-[12.5px]"
+                      style={{ color: "var(--success)" }}
+                    >
+                      {n.amount}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
 
       <BottomNav />
     </main>
+  );
+}
+
+function PasskeyNotifRow({
+  isPending,
+  error,
+  onAdd,
+  onLater,
+}: {
+  isPending: boolean;
+  error: string | null;
+  onAdd: () => void;
+  onLater: () => void;
+}) {
+  return (
+    <li className="border-hairline flex items-center gap-3.5 border-b py-3.5">
+      <span className="bg-primary/15 text-primary flex size-11 shrink-0 items-center justify-center rounded-full">
+        <KeyRound size={20} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14.5px] leading-snug">
+          <span className="font-semibold">Add a passkey</span>{" "}
+          <span className="text-muted">to make future logins faster.</span>
+        </p>
+        {error && <p className="text-danger mt-0.5 text-[12px]">{error}</p>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onLater}
+          disabled={isPending}
+          className="text-muted hover:text-text text-[12.5px] font-semibold disabled:opacity-50"
+        >
+          Later
+        </button>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={isPending}
+          className="bg-primary text-primary-fg rounded-pill px-3 py-1.5 text-[12.5px] font-bold disabled:opacity-60"
+        >
+          {isPending ? "…" : "Add"}
+        </button>
+      </div>
+    </li>
   );
 }

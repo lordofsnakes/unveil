@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import {
   X,
   User,
@@ -15,8 +14,11 @@ import {
   Globe,
   LogOut,
   ChevronDown,
+  KeyRound,
 } from "lucide-react";
 import { useTheme } from "./useTheme";
+import { useAppAuth, useAppSignOut, useAppUser } from "./useAppAuth";
+import { usePasskeyEnrollment } from "./usePasskeyEnrollment";
 
 export function SettingsDrawer({
   open,
@@ -26,9 +28,9 @@ export function SettingsDrawer({
   onClose: () => void;
 }) {
   const { theme, toggle } = useTheme();
-  const { isSignedIn } = useAuth();
-  const { signOut } = useClerk();
-  const { user } = useUser();
+  const { isSignedIn } = useAppAuth();
+  const signOut = useAppSignOut();
+  const { user } = useAppUser();
 
   useEffect(() => {
     if (!open) return;
@@ -110,8 +112,15 @@ export function SettingsDrawer({
           <Row icon={User} label="My profile" href="/profile" onNavigate={onClose} />
           <Row icon={Layers} label="Collections" />
           <Row icon={SettingsIcon} label="Settings" />
+          <PasskeyRow />
           <Divider />
-          <Row icon={CreditCard} label="Your cards" hint="(to subscribe)" />
+          <Row
+            icon={CreditCard}
+            label="Your cards"
+            hint="(to subscribe)"
+            href="/payment-cards"
+            onNavigate={onClose}
+          />
           <Row icon={Building2} label="Become a creator" hint="(to earn)" />
           <Divider />
           <Row icon={HelpCircle} label="Help and support" />
@@ -165,6 +174,45 @@ export function SettingsDrawer({
 
 function Divider() {
   return <div className="bg-hairline mx-[22px] my-2 h-px" />;
+}
+
+// Security row. Only rendered for real Clerk users — dev-auth accounts and
+// signed-out visitors produce neither `hasPasskey` nor `canEnroll`.
+function PasskeyRow() {
+  const { hasPasskey, canEnroll, isPending, error, enrollPasskey } =
+    usePasskeyEnrollment();
+
+  if (!hasPasskey && !canEnroll) return null;
+
+  return (
+    <div className="flex w-full items-center gap-3.5 px-[22px] py-3.5">
+      <KeyRound size={21} strokeWidth={1.8} className="text-muted" />
+      <div className="min-w-0 flex-1">
+        <span className="text-[15px] font-medium">Passkey</span>
+        {error && <p className="text-danger mt-0.5 text-[12px]">{error}</p>}
+      </div>
+      {hasPasskey ? (
+        <span
+          className="text-[12.5px] font-semibold"
+          style={{ color: "var(--success)" }}
+        >
+          Connected
+        </span>
+      ) : (
+        <div className="flex items-center gap-2.5">
+          <span className="text-faint text-[12.5px] font-medium">Recommended</span>
+          <button
+            type="button"
+            onClick={enrollPasskey}
+            disabled={isPending}
+            className="bg-primary text-primary-fg rounded-pill px-3 py-1.5 text-[12.5px] font-bold disabled:opacity-60"
+          >
+            {isPending ? "…" : "Add"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Row({

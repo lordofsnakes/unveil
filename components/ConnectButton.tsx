@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, useClerk, useUser } from "@clerk/nextjs";
-import { CreditCard, Landmark, LogOut } from "lucide-react";
+import { Check, CreditCard, KeyRound, Landmark, LogOut } from "lucide-react";
+import { useAppAuth, useAppSignOut, useAppUser } from "./useAppAuth";
+import { usePasskeyEnrollment } from "./usePasskeyEnrollment";
 
 type Account = {
   userId: string;
@@ -22,9 +23,10 @@ function formatMoney(value: string | null) {
 
 export function ConnectButton() {
   const router = useRouter();
-  const { signOut } = useClerk();
-  const { isLoaded, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const signOut = useAppSignOut();
+  const { isLoaded, isSignedIn } = useAppAuth();
+  const { user } = useAppUser();
+  const passkey = usePasskeyEnrollment();
   const [account, setAccount] = useState<Account | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -154,6 +156,32 @@ export function ConnectButton() {
           </div>
 
           {error && <p className="text-danger mt-3 text-sm">{error}</p>}
+
+          {passkey.canEnroll && (
+            <>
+              <button
+                type="button"
+                onClick={passkey.enrollPasskey}
+                disabled={passkey.isPending}
+                className="bg-surface-2 text-text mt-2 flex w-full items-center justify-center gap-1.5 rounded-[14px] px-3 py-2 text-sm font-semibold disabled:opacity-60"
+              >
+                <KeyRound size={15} />
+                {passkey.isPending ? "Opening…" : "Secure with passkey"}
+              </button>
+              {passkey.error && (
+                <p className="text-danger mt-2 text-sm">{passkey.error}</p>
+              )}
+            </>
+          )}
+          {passkey.success && (
+            <p
+              className="mt-2 flex items-center justify-center gap-1.5 text-sm font-semibold"
+              style={{ color: "var(--success)" }}
+            >
+              <Check size={15} strokeWidth={2.4} />
+              Passkey added
+            </p>
+          )}
 
           <button
             type="button"
