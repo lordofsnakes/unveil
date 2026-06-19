@@ -12,6 +12,7 @@ import {
   unauthorizedJson,
   UnauthorizedError,
 } from "@/lib/app-user";
+import { TEMPO_TESTNET } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -50,6 +51,14 @@ function paymentChallenge({
       required,
     },
   };
+}
+
+function isTransactionHash(value?: string): value is `0x${string}` {
+  return /^0x[0-9a-fA-F]{64}$/.test(value ?? "");
+}
+
+function transactionUrl(txHash?: string) {
+  return isTransactionHash(txHash) ? `${TEMPO_TESTNET.explorer}/tx/${txHash}` : null;
 }
 
 /**
@@ -171,6 +180,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       status: result.status,
       balance: result.balance,
       paymentTxHash: result.txHash,
+      paymentTxUrl: transactionUrl(result.txHash),
       amount: result.amount,
       chargedSeconds: result.chargedSeconds,
       tick: tickValue,

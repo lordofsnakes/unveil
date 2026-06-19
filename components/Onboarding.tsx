@@ -423,11 +423,16 @@ export function Onboarding() {
           </span>
         </div>
 
-        <h1 className="m-0 mb-[30px] max-w-[330px] text-[29px] font-bold leading-[1.14]">
-          Log in to support your favorite creators
-        </h1>
-
-        <div className="text-text mb-[13px] text-sm font-semibold">
+        <div
+          className={`text-text mb-[13px] font-semibold ${
+            mode === "sign-in" &&
+            !isResetRequest &&
+            !isResetVerify &&
+            !isVerifyingClientTrust
+              ? "text-[17px]"
+              : "text-sm"
+          }`}
+        >
           {isResetRequest
             ? "Reset password"
             : isResetVerify

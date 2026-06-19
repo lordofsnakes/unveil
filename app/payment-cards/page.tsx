@@ -45,7 +45,11 @@ type Payment = {
 
 type Tab = "cards" | "payments";
 
-const AMOUNTS = ["10", "25", "50"] as const;
+const PRESET_AMOUNTS = ["10", "20", "50", "100"] as const;
+const CUSTOM_AMOUNT = "custom";
+
+type PresetAmount = (typeof PRESET_AMOUNTS)[number];
+type AmountChoice = PresetAmount | typeof CUSTOM_AMOUNT;
 
 function money(value: string | number | null | undefined) {
   const amount = Number(value ?? 0);
@@ -87,6 +91,15 @@ function paymentStatusLabel(status: Payment["status"]) {
   }
 }
 
+function isPresetAmount(value: string | null | undefined): value is PresetAmount {
+  return PRESET_AMOUNTS.includes(value as PresetAmount);
+}
+
+function isValidDepositAmount(value: string) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount >= 1 && amount <= 500;
+}
+
 export default function PaymentCardsPage() {
   const router = useRouter();
   const { isLoaded } = useAppAuth();
@@ -94,11 +107,11 @@ export default function PaymentCardsPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [selectedAmount, setSelectedAmount] = useState<(typeof AMOUNTS)[number]>("25");
+  const [selectedAmount, setSelectedAmount] = useState<AmountChoice>("20");
+  const [customAmount, setCustomAmount] = useState("25");
   const [pendingDepositId, setPendingDepositId] = useState<string | null>(null);
   const [pendingAmount, setPendingAmount] = useState<string | null>(null);
   const [mockCardAdded, setMockCardAdded] = useState(false);
-  const [rechargePrimary, setRechargePrimary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +159,12 @@ export default function PaymentCardsPage() {
     if (!deposit) return;
     setPendingDepositId(deposit);
     setPendingAmount(amount);
-    setSelectedAmount((amount === "10" || amount === "25" || amount === "50" ? amount : "25"));
+    if (isPresetAmount(amount)) {
+      setSelectedAmount(amount);
+    } else if (amount) {
+      setSelectedAmount(CUSTOM_AMOUNT);
+      setCustomAmount(amount);
+    }
     setSheetOpen(true);
   }, []);
 
@@ -154,8 +172,17 @@ export default function PaymentCardsPage() {
     () => payments.filter((payment) => payment.status !== "failed").slice(0, 5),
     [payments],
   );
+  const selectedDepositAmount =
+    selectedAmount === CUSTOM_AMOUNT ? customAmount.trim() : selectedAmount;
+  const depositAmount = pendingAmount ?? selectedDepositAmount;
+  const canSubmitAmount = pendingDepositId != null || isValidDepositAmount(depositAmount);
 
   async function startDeposit(amount: string) {
+    const depositAmount = amount.trim();
+    if (!isValidDepositAmount(depositAmount)) {
+      setError("Deposit amount must be between $1 and $500");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setNotice(null);
@@ -164,7 +191,7 @@ export default function PaymentCardsPage() {
       const res = await fetch("/api/account/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ amount: depositAmount }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         url?: string;
@@ -180,8 +207,8 @@ export default function PaymentCardsPage() {
       }
 
       setPendingDepositId(mockDeposit);
-      setPendingAmount(amount);
-      await completeMockDeposit(mockDeposit, amount);
+      setPendingAmount(depositAmount);
+      await completeMockDeposit(mockDeposit, depositAmount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deposit failed");
     } finally {
@@ -228,7 +255,14 @@ export default function PaymentCardsPage() {
       return;
     }
 
-    await startDeposit(selectedAmount);
+    await startDeposit(selectedDepositAmount);
+  }
+
+  function openAddFundsSheet(choice: AmountChoice = "20") {
+    setSelectedAmount(choice);
+    setError(null);
+    setNotice(null);
+    setSheetOpen(true);
   }
 
   return (
@@ -252,15 +286,17 @@ export default function PaymentCardsPage() {
           >
             VERIFY
           </button>
-          <button
-            type="button"
-            aria-label="Add billing method"
-            onClick={() => setSheetOpen(true)}
-            className="text-muted hover:text-text -mr-2 flex size-[38px] items-center justify-center"
-          >
-            <CreditCard size={24} strokeWidth={1.9} />
-            <Plus size={10} strokeWidth={3} className="-ml-1 mt-4 text-primary" />
-          </button>
+          {!mockCardAdded && (
+            <button
+              type="button"
+              aria-label="Add billing method"
+              onClick={() => setSheetOpen(true)}
+              className="text-muted hover:text-text -mr-2 flex size-[38px] items-center justify-center"
+            >
+              <CreditCard size={24} strokeWidth={1.9} />
+              <Plus size={10} strokeWidth={3} className="-ml-1 mt-4 text-primary" />
+            </button>
+          )}
         </div>
 
         <div className="border-hairline border-t">
@@ -291,33 +327,42 @@ export default function PaymentCardsPage() {
               <h2 className="text-faint text-[13px] font-bold tracking-[0.04em]">
                 ADD FUNDS
               </h2>
-              <Button
-                onClick={() => setSheetOpen(true)}
-                className="mt-7 w-full"
-              >
-                <CreditCard size={18} />
-                ADD BILLING METHOD
-              </Button>
-              <button
-                type="button"
-                onClick={() => setRechargePrimary((value) => !value)}
-                className="mt-7 flex min-h-11 w-full items-center justify-between gap-4 text-left"
-              >
-                <span className="text-[15px] font-medium leading-[1.25]">
-                  Make wallet primary method for rebills
-                </span>
-                <span
-                  className="relative h-6 w-[42px] shrink-0 rounded-pill transition-colors"
-                  style={{
-                    background: rechargePrimary ? "var(--primary)" : "var(--surface-3)",
-                  }}
+              {mockCardAdded ? (
+                <>
+                  <p className="text-muted mt-2 text-[14px] leading-snug">
+                    Choose a quick recharge amount for your saved billing method.
+                  </p>
+                  <div className="mt-5 grid grid-cols-3 gap-2">
+                    {PRESET_AMOUNTS.map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        onClick={() => openAddFundsSheet(amount)}
+                        disabled={submitting}
+                        className="bg-surface-2 border-hairline text-text hover:bg-surface-3 tabular h-12 rounded-md border text-[15px] font-bold transition-colors disabled:opacity-50"
+                      >
+                        {money(amount)}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => openAddFundsSheet(CUSTOM_AMOUNT)}
+                      disabled={submitting}
+                      className="bg-surface-2 border-hairline text-text hover:bg-surface-3 h-12 rounded-md border text-[14px] font-bold transition-colors disabled:opacity-50"
+                    >
+                      Custom
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <Button
+                  onClick={() => setSheetOpen(true)}
+                  className="mt-7 w-full"
                 >
-                  <span
-                    className="absolute top-0.5 size-5 rounded-full bg-white transition-[left]"
-                    style={{ left: rechargePrimary ? 20 : 2, boxShadow: "0 1px 3px rgba(0,0,0,.3)" }}
-                  />
-                </span>
-              </button>
+                  <CreditCard size={18} />
+                  ADD BILLING METHOD
+                </Button>
+              )}
             </section>
 
             <section className="px-[18px] py-7">
@@ -325,15 +370,17 @@ export default function PaymentCardsPage() {
                 <h2 className="text-faint text-[13px] font-bold tracking-[0.04em]">
                   BILLING
                 </h2>
-                <button
-                  type="button"
-                  aria-label="Add billing method"
-                  onClick={() => setSheetOpen(true)}
-                  className="text-muted hover:text-text flex size-10 items-center justify-center"
-                >
-                  <CreditCard size={23} strokeWidth={1.9} />
-                  <Plus size={10} strokeWidth={3} className="-ml-1 mt-4 text-primary" />
-                </button>
+                {!mockCardAdded && (
+                  <button
+                    type="button"
+                    aria-label="Add billing method"
+                    onClick={() => setSheetOpen(true)}
+                    className="text-muted hover:text-text flex size-10 items-center justify-center"
+                  >
+                    <CreditCard size={23} strokeWidth={1.9} />
+                    <Plus size={10} strokeWidth={3} className="-ml-1 mt-4 text-primary" />
+                  </button>
+                )}
               </div>
 
               {mockCardAdded ? (
@@ -396,7 +443,7 @@ export default function PaymentCardsPage() {
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <button
             type="button"
-            aria-label="Close add billing method"
+            aria-label={mockCardAdded ? "Close add funds" : "Close add billing method"}
             className="absolute inset-0 cursor-default bg-black/55"
             style={{ animation: "vscrim .2s ease both" }}
             onClick={() => {
@@ -413,7 +460,7 @@ export default function PaymentCardsPage() {
           >
             <div className="mb-4 flex items-center justify-between gap-4">
               <h2 id="add-card-title" className="text-[22px] font-bold">
-                Add billing method
+                {mockCardAdded ? "Add funds" : "Add billing method"}
               </h2>
               <button
                 type="button"
@@ -427,43 +474,56 @@ export default function PaymentCardsPage() {
                 <X size={22} />
               </button>
             </div>
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
-                  Card number
+            {mockCardAdded ? (
+              <div className="bg-surface-2 border-hairline mt-4 flex items-center gap-3 rounded-md border px-4 py-4">
+                <span className="text-primary flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-tint">
+                  <CreditCard size={21} />
                 </span>
-                <input
-                  value="4242 4242 4242 4242"
-                  readOnly
-                  className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
-                    Expiry
-                  </span>
-                  <input
-                    value="04/29"
-                    readOnly
-                    className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
-                    CVC
-                  </span>
-                  <input
-                    value="123"
-                    readOnly
-                    className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
-                  />
-                </label>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold">Mock billing card</div>
+                  <div className="text-faint mt-1 text-[13px]">Ending in 4242</div>
+                </div>
+                <CheckCircle2 size={21} className="text-success" />
               </div>
-            </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
+                    Card number
+                  </span>
+                  <input
+                    value="4242 4242 4242 4242"
+                    readOnly
+                    className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
+                      Expiry
+                    </span>
+                    <input
+                      value="04/29"
+                      readOnly
+                      className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
+                      CVC
+                    </span>
+                    <input
+                      value="123"
+                      readOnly
+                      className="bg-surface-2 border-hairline text-text mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 grid grid-cols-3 gap-2">
-              {AMOUNTS.map((amount) => (
+              {PRESET_AMOUNTS.map((amount) => (
                 <button
                   key={amount}
                   type="button"
@@ -477,7 +537,33 @@ export default function PaymentCardsPage() {
                   {money(amount)}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setSelectedAmount(CUSTOM_AMOUNT)}
+                className={`h-11 rounded-md border text-[15px] font-semibold transition-colors ${
+                  selectedAmount === CUSTOM_AMOUNT
+                    ? "border-primary bg-primary-tint text-primary"
+                    : "border-hairline bg-surface-2 text-text hover:bg-surface-3"
+                }`}
+              >
+                Custom
+              </button>
             </div>
+
+            {selectedAmount === CUSTOM_AMOUNT && (
+              <label className="mt-4 block">
+                <span className="text-faint text-[12px] font-bold uppercase tracking-[0.04em]">
+                  Custom amount
+                </span>
+                <input
+                  value={customAmount}
+                  onChange={(event) => setCustomAmount(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="25"
+                  className="bg-surface-2 border-hairline text-text tabular mt-2 h-[50px] w-full rounded-md border px-4 text-[16px] outline-none"
+                />
+              </label>
+            )}
 
             {error && (
               <p className="text-danger mt-4 text-[14px] font-semibold" role="alert">
@@ -488,9 +574,10 @@ export default function PaymentCardsPage() {
             <Button
               onClick={submitSheet}
               loading={submitting}
+              disabled={!canSubmitAmount}
               className="mt-5 w-full"
             >
-              ADD {money(pendingAmount ?? selectedAmount)}
+              ADD {canSubmitAmount ? money(depositAmount) : "FUNDS"}
             </Button>
           </section>
         </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, CreditCard, Send } from "lucide-react";
+import { ArrowLeft, ArrowUp, Check, CreditCard, Send } from "lucide-react";
 import { Avatar } from "./ui/Avatar";
 import { useAppAuth } from "./useAppAuth";
 
@@ -106,7 +106,7 @@ export function TipSheet({
       setStage("sent");
       haptic([6, 40, 12]);
       window.dispatchEvent(new Event("veil:balance-changed"));
-      setTimeout(() => onClose(), 1400);
+      setTimeout(() => onClose(), 1700);
     } catch (err) {
       setStage("idle");
       setError(err instanceof Error ? err.message : "Tip failed");
@@ -118,7 +118,7 @@ export function TipSheet({
       role="dialog"
       aria-modal="true"
       aria-label="Send a tip"
-      className="fixed inset-0 z-50 flex flex-col"
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden"
       style={{
         background:
           "radial-gradient(120% 55% at 50% -6%, var(--tint), transparent 58%), var(--bg)",
@@ -150,16 +150,8 @@ export function TipSheet({
           <div className="mt-3 text-lg font-bold">{creatorName}</div>
           <div className="text-faint mt-0.5 text-[13px]">{creatorHandle}</div>
 
-          {/* Big amount + coin */}
+          {/* Big amount */}
           <div className="relative my-6 flex items-baseline gap-0.5">
-            {stage === "sent" && (
-              <div
-                className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-2xl"
-                style={{ animation: "vcoin 1s cubic-bezier(.22,1,.36,1) both" }}
-              >
-                🪙
-              </div>
-            )}
             <span
               className="text-primary tabular mt-1.5 self-start text-3xl font-bold"
               style={{ fontFamily: "var(--font-mono, 'Geist Mono'), monospace" }}
@@ -285,6 +277,32 @@ export function TipSheet({
           </button>
         </div>
       </div>
+
+      {stage === "sent" && (
+        <div
+          className="tip-success-screen absolute inset-0 z-20 flex flex-col items-center justify-center px-8 text-center text-white"
+          aria-live="polite"
+          style={{
+            background:
+              "radial-gradient(95% 55% at 50% 8%, rgba(255,255,255,.18), transparent 58%), linear-gradient(180deg, var(--primary-hover), var(--primary-press))",
+          }}
+        >
+          <div className="tip-success-mark relative flex size-28 items-center justify-center rounded-full border border-white/30 bg-white/10 shadow-[0_18px_50px_rgba(0,0,0,.28)]">
+            <span className="tip-success-trail absolute h-16 w-1 rounded-full bg-white/40" />
+            <ArrowUp
+              size={76}
+              strokeWidth={2.5}
+              className="tip-success-arrow relative z-10"
+            />
+          </div>
+          <div className="tip-success-copy mt-8">
+            <div className="text-3xl font-bold tracking-tight">Sent ${amount}</div>
+            <div className="mt-2 text-sm font-medium text-white/78">
+              to {creatorHandle}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

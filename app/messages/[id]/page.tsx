@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
+  ExternalLink,
   ArrowLeft,
   MoreHorizontal,
   Lock,
@@ -376,6 +377,10 @@ function CallSheet({
   const [seconds, setSeconds] = useState(0);
   const [chargedSeconds, setChargedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [paymentReceipt, setPaymentReceipt] = useState<{
+    hash: string;
+    url: string;
+  } | null>(null);
   const callIdRef = useRef<string | null>(null);
   const ringTimerRef = useRef<number | null>(null);
   const rate = 0.05;
@@ -421,6 +426,8 @@ function CallSheet({
         detail?: string;
         balance?: string;
         chargedSeconds?: number;
+        paymentTxHash?: string;
+        paymentTxUrl?: string | null;
       };
       if (res.status === 402) {
         setError(body.detail ?? "Add funds to complete this call.");
@@ -433,6 +440,11 @@ function CallSheet({
         return;
       }
       setChargedSeconds(body.chargedSeconds ?? duration);
+      setPaymentReceipt(
+        body.paymentTxHash && body.paymentTxUrl
+          ? { hash: body.paymentTxHash, url: body.paymentTxUrl }
+          : null,
+      );
       window.dispatchEvent(new Event("veil:balance-changed"));
       setPhase("idle");
     } finally {
@@ -465,6 +477,7 @@ function CallSheet({
 
   const startCall = () => {
     setError(null);
+    setPaymentReceipt(null);
     setChargedSeconds(0);
     setSeconds(0);
     secondsRef.current = 0;
@@ -540,6 +553,20 @@ function CallSheet({
             <div className="text-faint mt-1 text-xs">
               Estimated <span className="tabular">{estimatedTotal}</span>
             </div>
+          )}
+          {paymentReceipt && chargedSeconds > 0 && (
+            <a
+              href={paymentReceipt.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary mt-3 inline-flex items-center justify-center gap-1.5 text-xs font-semibold"
+            >
+              <span>
+                Receipt {paymentReceipt.hash.slice(0, 8)}...
+                {paymentReceipt.hash.slice(-6)}
+              </span>
+              <ExternalLink size={13} aria-hidden />
+            </a>
           )}
         </div>
         {error && (

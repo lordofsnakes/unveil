@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Menu, Zap, X } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Camera, Menu, Zap, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { FlexCard } from "@/components/FlexCard";
@@ -35,6 +35,7 @@ export default function ProfilePage() {
   const { user } = useAppUser();
   const [drawer, setDrawer] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editClosing, setEditClosing] = useState(false);
   const [loyalty, setLoyalty] = useState<Loyalty | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [collection, setCollection] = useState<CollectionItem[] | null>(null);
@@ -74,6 +75,19 @@ export default function ProfilePage() {
     }
   }
 
+  function openEdit() {
+    setEditOpen(true);
+    setEditClosing(false);
+  }
+
+  function closeEdit() {
+    setEditClosing(true);
+    window.setTimeout(() => {
+      setEditOpen(false);
+      setEditClosing(false);
+    }, 220);
+  }
+
   return (
     <main className="flex min-h-dvh flex-1 flex-col">
       {/* Header bar */}
@@ -107,7 +121,7 @@ export default function ProfilePage() {
           <>
             {/* Identity */}
             <div className="flex items-end gap-4">
-              <Avatar name={handle} src={profile?.avatar} size="xl" verified />
+              <Avatar name={handle} src={profile?.avatar ?? profile?.imageUrl} size="xl" verified />
               <div className="flex-1 pb-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xl font-bold">{displayName}</span>
@@ -120,7 +134,7 @@ export default function ProfilePage() {
               <Button
                 variant="secondary"
                 className="h-[46px] flex-1 text-sm"
-                onClick={() => setEditOpen(true)}
+                onClick={openEdit}
               >
                 Edit profile
               </Button>
@@ -203,10 +217,13 @@ export default function ProfilePage() {
       {editOpen && (
         <EditProfileSheet
           current={profile?.username ?? ""}
-          onClose={() => setEditOpen(false)}
+          currentAvatar={profile?.avatar ?? profile?.imageUrl ?? null}
+          currentName={displayName}
+          closing={editClosing}
+          onClose={closeEdit}
           onSaved={(p) => {
             setProfile((current) => ({ ...(current ?? p), ...p } as Profile));
-            setEditOpen(false);
+            closeEdit();
           }}
         />
       )}
@@ -216,16 +233,25 @@ export default function ProfilePage() {
 
 function EditProfileSheet({
   current,
+  currentAvatar,
+  currentName,
+  closing = false,
   onClose,
   onSaved,
 }: {
   current: string;
+  currentAvatar: string | null;
+  currentName: string;
+  closing?: boolean;
   onClose: () => void;
   onSaved: (p: Partial<Profile>) => void;
 }) {
   const [name, setName] = useState(current);
+  const [avatar, setAvatar] = useState(currentAvatar);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -248,7 +274,7 @@ function EditProfileSheet({
       const res = await fetch("/api/user", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: name }),
+        body: JSON.stringify({ username: name, avatar }),
       });
       const d = (await res.json().catch(() => ({}))) as {
         user?: Partial<Profile>;
@@ -263,6 +289,22 @@ function EditProfileSheet({
     }
   }
 
+  async function chooseAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    setError(null);
+    try {
+      const nextAvatar = await resizeProfileImage(file);
+      setAvatar(nextAvatar);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not use that image");
+    } finally {
+      setUploadingAvatar(false);
+      event.target.value = "";
+    }
+  }
+
   return (
     <div
       role="dialog"
@@ -274,11 +316,21 @@ function EditProfileSheet({
         type="button"
         aria-label="Close edit profile"
         className="absolute inset-0 cursor-default bg-black/50"
+        style={{
+          animation: closing
+            ? "vfade .18s ease reverse both"
+            : "vscrim .2s ease both",
+        }}
         onClick={onClose}
       />
       <div
         className="bg-surface border-hairline relative max-h-[88dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-card border-t p-5"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 22px)" }}
+        style={{
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 22px)",
+          animation: closing
+            ? "vsheetout .22s cubic-bezier(.22,1,.36,1) both"
+            : "vsheet .3s cubic-bezier(.22,1,.36,1) both",
+        }}
       >
         <div className="mb-4 flex items-center justify-between">
           <span id="edit-profile-title" className="text-[16px] font-semibold">
@@ -291,6 +343,36 @@ function EditProfileSheet({
             className="text-muted"
           >
             <X size={20} />
+          </button>
+        </div>
+        <div className="mb-5 flex flex-col items-center">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="group relative rounded-full"
+            aria-label="Choose profile picture"
+          >
+            <Avatar name={currentName} src={avatar} size="xl" />
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 transition-colors group-hover:bg-black/35">
+              <span className="bg-primary text-primary-fg absolute -right-1 bottom-1 flex size-8 items-center justify-center rounded-full shadow-cta">
+                <Camera size={16} />
+              </span>
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={chooseAvatar}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingAvatar || saving}
+            className="text-primary hover:text-primary-hover mt-3 text-[13px] font-bold disabled:opacity-60"
+          >
+            {uploadingAvatar ? "Preparing image..." : avatar ? "Change profile picture" : "Add profile picture"}
           </button>
         </div>
         <label htmlFor="profile-username" className="text-faint text-[12.5px]">
@@ -314,7 +396,7 @@ function EditProfileSheet({
         <Button
           className="mt-4 h-[48px] w-full"
           onClick={save}
-          disabled={saving || !name.trim()}
+          disabled={saving || uploadingAvatar || !name.trim()}
         >
           {saving ? "Saving…" : "Save"}
         </Button>
@@ -353,4 +435,40 @@ function fmt(n: string): string {
 function fmtPoints(n: string): string {
   const v = Number(n);
   return Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "0";
+}
+
+function resizeProfileImage(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("Choose an image file"));
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    return Promise.reject(new Error("Image must be under 6 MB"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const size = 512;
+      const sourceSize = Math.min(img.naturalWidth, img.naturalHeight);
+      const sourceX = Math.max(0, (img.naturalWidth - sourceSize) / 2);
+      const sourceY = Math.max(0, (img.naturalHeight - sourceSize) / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not prepare image"));
+        return;
+      }
+      ctx.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.86));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read that image"));
+    };
+    img.src = url;
+  });
 }

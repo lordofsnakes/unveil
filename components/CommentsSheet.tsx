@@ -17,8 +17,6 @@ import { useAppAuth } from "./useAppAuth";
 import { timeAgo } from "@/lib/time";
 import type { CommentNode } from "@/lib/db/social";
 
-const REACTS = ["🤍", "🙌", "🔥", "👏", "😍", "😮"];
-
 function haptic(pattern: number | number[]) {
   if (typeof navigator !== "undefined" && "vibrate" in navigator) {
     try {
@@ -285,23 +283,9 @@ export function CommentsSheet({
           <div className="h-2" />
         </div>
 
-        {/* Emoji quick reacts */}
-        <div className="border-hairline flex items-center justify-between border-t px-[18px] pt-2.5 pb-[7px]">
-          {REACTS.map((e) => (
-            <button
-              key={e}
-              type="button"
-              onClick={() => setText((t) => t + e)}
-              className="text-[23px] leading-none"
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-
         {/* Composer */}
         <div
-          className="border-hairline bg-surface border-t px-3.5 pt-2 transition-transform duration-[220ms] ease-veil focus-within:-translate-y-5 motion-reduce:transform-none motion-reduce:transition-none"
+          className="border-hairline bg-surface border-t px-3.5 pt-3 transition-transform duration-[220ms] ease-veil focus-within:-translate-y-5 motion-reduce:transform-none motion-reduce:transition-none"
           style={{
             paddingBottom: "max(20px, env(safe-area-inset-bottom, 0px))",
           }}
@@ -318,7 +302,13 @@ export function CommentsSheet({
               </button>
             </div>
           )}
-          <div className="bg-surface-2 border-hairline flex items-center gap-2 rounded-pill border py-[7px] pr-[7px] pl-4">
+          <div
+            className="bg-surface-2 border-hairline flex items-center gap-2 rounded-pill border py-[7px] pr-[7px] pl-4"
+            onPointerDown={(event) => {
+              if (event.target instanceof HTMLButtonElement) return;
+              inputRef.current?.focus({ preventScroll: true });
+            }}
+          >
             <input
               ref={inputRef}
               value={text}
@@ -327,6 +317,8 @@ export function CommentsSheet({
                 if (e.key === "Enter") submit();
               }}
               placeholder={replyTo ? `Reply to ${replyTo.who}…` : "Add a comment…"}
+              inputMode="text"
+              enterKeyHint="send"
               className="text-text min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
             <button
