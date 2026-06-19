@@ -31,6 +31,8 @@ export function Avatar({
       style={{ width: px, height: px }}
     >
       <div
+        role={name ? "img" : undefined}
+        aria-label={name ? (verified ? `${name}, verified` : name) : undefined}
         className="size-full overflow-hidden rounded-full bg-cover bg-center"
         style={src ? { backgroundImage: `url(${src})` } : { background: gradient }}
       >
