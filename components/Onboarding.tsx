@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSignIn, useSignUp } from "@clerk/nextjs/legacy";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { isDevAuthEnabled } from "@/lib/dev-session";
 import { notifyDevAuthChanged, useAppAuth } from "./useAppAuth";
-import { CurtainMark } from "./Wordmark";
 
 type AuthMode = "sign-in" | "sign-up";
 type OAuthStrategy = "oauth_google" | "oauth_x";
@@ -408,16 +408,23 @@ export function Onboarding() {
           paddingBottom: "max(18px, env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="mb-5 flex items-center justify-center gap-[11px]">
-          <CurtainMark
-            width={48}
-            height={48}
-            radius={12}
-            glow="0 0 24px rgba(255,20,40,.44)"
+        <div className="mb-6 flex flex-col items-center justify-center gap-4">
+          <Image
+            src="/unveil-eye-logo.png"
+            alt=""
+            width={88}
+            height={88}
+            priority
+            className="h-[88px] w-[88px] object-contain"
+            style={{ mixBlendMode: "screen" }}
           />
           <span
             className="font-bold"
-            style={{ fontSize: 25, letterSpacing: 0 }}
+            style={{
+              fontFamily: "var(--font-brand-inter), sans-serif",
+              fontSize: 25,
+              letterSpacing: 0,
+            }}
           >
             UNVEIL
           </span>
