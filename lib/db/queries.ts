@@ -77,7 +77,8 @@ function usernameCandidate(base: string, attempt: number) {
 }
 
 function isUniqueViolation(err: unknown) {
-  return (err as { code?: string })?.code === "23505";
+  const error = err as { code?: string; cause?: { code?: string } };
+  return error.code === "23505" || error.cause?.code === "23505";
 }
 
 async function addGeneratedUsernameIfMissing(
