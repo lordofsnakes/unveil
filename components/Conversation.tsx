@@ -408,6 +408,11 @@ type ConversationTokenResponse = {
   environment?: string;
 };
 
+const ELEVENLABS_WORKLET_PATHS = {
+  rawAudioProcessor: "/elevenlabs-worklets/rawAudioProcessor.js",
+  audioConcatProcessor: "/elevenlabs-worklets/audioConcatProcessor.js",
+} as const;
+
 function CallSheet(props: {
   threadId: string;
   name: string;
@@ -959,6 +964,7 @@ function CallSheetSession({
           };
       startSession({
         ...sessionConfig,
+        workletPaths: ELEVENLABS_WORKLET_PATHS,
         onConnect: ({ conversationId }) => {
           markConnected({
             callId,

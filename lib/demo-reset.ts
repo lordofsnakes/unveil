@@ -27,10 +27,10 @@ const DEV_CLERK_ID = "dev_default_user";
 const DEMO_BALANCE = "20.00";
 const CREATOR_USERNAMES = [
   "gamefilm_room",
+  "sofia_bennett",
+  "maria_courtside",
   "sports_daily",
   "scoreboard_live",
-  "clutch_report",
-  "buzzer_beats",
 ] as const;
 
 type Creator = {
@@ -66,6 +66,16 @@ function demoScript(username: string | null, name: string) {
         "Your film room is ready. I can walk through the spoiler-safe demo whenever you are.",
         "Tap call if you want to show the metered voice flow.",
       ];
+    case "sofia_bennett":
+      return [
+        "I saved the cleanest match reveal for your demo run.",
+        "Call me from here when you want to show the live paid voice flow.",
+      ];
+    case "maria_courtside":
+      return [
+        "Courtside clip is queued up. The ending stays hidden until unlock.",
+        "You can call me here too, so the judges see it works beyond one room.",
+      ];
     case "sports_daily":
       return [
         "I just dropped a locked result reveal for the matchday post.",
@@ -93,6 +103,11 @@ export async function resetDemoUserState(user: AppUser): Promise<DemoResetResult
   if (!isDemoResetUser(user)) return { status: "skipped", reason: "not_demo_user" };
 
   const db = getDb();
+  await db
+    .update(users)
+    .set({ isCreator: true })
+    .where(inArray(users.username, [...CREATOR_USERNAMES]));
+
   const creators = await db
     .select({
       id: users.id,
@@ -106,6 +121,11 @@ export async function resetDemoUserState(user: AppUser): Promise<DemoResetResult
     return { status: "skipped", reason: "missing_creators" };
   }
 
+  creators.sort(
+    (a, b) =>
+      CREATOR_USERNAMES.indexOf(a.username as (typeof CREATOR_USERNAMES)[number]) -
+      CREATOR_USERNAMES.indexOf(b.username as (typeof CREATOR_USERNAMES)[number]),
+  );
   const creatorIds = creators.map((creator) => creator.id);
   const now = Date.now();
 
@@ -125,6 +145,11 @@ export async function resetDemoUserState(user: AppUser): Promise<DemoResetResult
       .delete(threads)
       .where(
         and(eq(threads.fanId, user.id), inArray(threads.creatorId, creatorIds)),
+      );
+    await tx
+      .delete(threads)
+      .where(
+        and(eq(threads.creatorId, user.id), inArray(threads.fanId, creatorIds)),
       );
 
     const [balance] = await tx
