@@ -412,6 +412,8 @@ const ELEVENLABS_WORKLET_PATHS = {
   rawAudioProcessor: "/elevenlabs-worklets/rawAudioProcessor.js",
   audioConcatProcessor: "/elevenlabs-worklets/audioConcatProcessor.js",
 } as const;
+const ELEVENLABS_LIBSAMPLERATE_PATH =
+  "/elevenlabs-worklets/libsamplerate.worklet.js";
 
 function CallSheet(props: {
   threadId: string;
@@ -965,6 +967,7 @@ function CallSheetSession({
       startSession({
         ...sessionConfig,
         workletPaths: ELEVENLABS_WORKLET_PATHS,
+        libsampleratePath: ELEVENLABS_LIBSAMPLERATE_PATH,
         onConnect: ({ conversationId }) => {
           markConnected({
             callId,
