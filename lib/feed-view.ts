@@ -40,6 +40,14 @@ export async function buildFeedView(fanId: string): Promise<FeedPost[] | null> {
           unlockPrice: p.unlockPrice,
           mediaType: p.mediaType,
           accessMode: p.accessMode,
+          clientBlurPreview:
+            p.accessMode === "full" &&
+            Number(p.unlockPrice) > 0 &&
+            p.blurredPreviewUrl === p.privateMediaKey,
+          gateAfterSeconds:
+            p.mediaType === "video" && p.teaserFreeMs
+              ? p.teaserFreeMs / 1000
+              : null,
           unlocked: !!ownedMediaKey,
           revealedUrl: ownedMediaKey ? await presignPrivateGet(ownedMediaKey, 300) : null,
           createdAt: p.createdAt?.toISOString(),

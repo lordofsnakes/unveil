@@ -18,6 +18,42 @@ import { settleUnlockWithCustodialWallet } from "@/lib/custodial-wallets";
 // Postgres + Supabase Storage signing need the Node.js runtime.
 export const runtime = "nodejs";
 
+async function settleCustodialUnlockInBackground({
+  userId,
+  postId,
+  amount,
+  txHash,
+}: {
+  userId: string;
+  postId: string;
+  amount: string;
+  txHash: string;
+}) {
+  const settlement = await settleUnlockWithCustodialWallet({
+    userId,
+    amountUsd: amount,
+    reference: txHash,
+  });
+
+  if (!settlement.ok) {
+    await rollbackCustodialUnlock({
+      userId,
+      postId,
+      amount,
+      txHash,
+    });
+    console.error("[unlock] async settlement failed:", settlement.reason);
+    return;
+  }
+
+  await finalizeCustodialUnlockPaymentHash({
+    userId,
+    postId,
+    internalTxHash: txHash,
+    paymentTxHash: settlement.txHash,
+  });
+}
+
 function jsonWithAccountCookie(
   body: Record<string, unknown>,
   userId: string,
@@ -132,34 +168,24 @@ export async function POST(req: NextRequest) {
 
   const isPaidUnlock = Number(post.unlockPrice) > 0;
   if (unlock.status === "unlocked" && isPaidUnlock) {
-    const settlement = await settleUnlockWithCustodialWallet({
-      userId: appUser.id,
-      amountUsd: post.unlockPrice,
-      reference: unlock.txHash,
-    });
-    if (!settlement.ok) {
-      await rollbackCustodialUnlock({
-        userId: appUser.id,
-        postId,
-        amount: post.unlockPrice,
-        txHash: unlock.txHash,
-      });
-      return jsonWithAccountCookie(
-        {
-          error: "Settlement failed",
-          settlementError: settlement.reason,
-        },
-        appUser.id,
-        { status: 402 },
-      );
-    }
-    await finalizeCustodialUnlockPaymentHash({
+    void settleCustodialUnlockInBackground({
       userId: appUser.id,
       postId,
-      internalTxHash: unlock.txHash,
-      paymentTxHash: settlement.txHash,
+      amount: post.unlockPrice,
+      txHash: unlock.txHash,
+    }).catch(async (err) => {
+      console.error("[unlock] async settlement crashed:", err);
+      try {
+        await rollbackCustodialUnlock({
+          userId: appUser.id,
+          postId,
+          amount: post.unlockPrice,
+          txHash: unlock.txHash,
+        });
+      } catch (rollbackErr) {
+        console.error("[unlock] async rollback failed:", rollbackErr);
+      }
     });
-    unlock.txHash = settlement.txHash;
   }
 
   // 3. Issue a short-lived signed URL for the unblurred media.
@@ -170,6 +196,8 @@ export async function POST(req: NextRequest) {
     {
       signedUrl,
       settlementMs,
+      settlementStatus:
+        unlock.status === "unlocked" && isPaidUnlock ? "pending" : "complete",
       alreadyUnlocked: unlock.status === "already_unlocked",
       balance: unlock.status === "unlocked" ? unlock.balance : undefined,
       paymentTxHash: unlock.txHash,

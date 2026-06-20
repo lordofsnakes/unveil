@@ -24,6 +24,7 @@ import {
   hideOwnPostsExceptDevUnveilTestPost,
   shouldResetDevUnveilFixture,
 } from "./feed-policy";
+import { persistUnlockOwnership } from "../unlock-ownership";
 export type { ClerkUserInput } from "./user-profile";
 
 async function addGeneratedUsernameIfMissing(
@@ -115,6 +116,10 @@ export async function ensureUserBalance(userId: string) {
 export async function getOrCreateUserForClerk(input: ClerkUserInput) {
   const db = getDb();
   const profile = clerkProfile(input);
+  const identityPatch = {
+    clerkId: profile.clerkId,
+    email: profile.email,
+  };
   const [user] = await db
     .insert(users)
     .values({
@@ -124,7 +129,7 @@ export async function getOrCreateUserForClerk(input: ClerkUserInput) {
     })
     .onConflictDoUpdate({
       target: users.clerkId,
-      set: profile,
+      set: identityPatch,
     })
     .returning();
 
@@ -140,6 +145,10 @@ export async function attachAnonymousCustodialAccountToClerk({
   clerkUser: ClerkUserInput;
 }) {
   const profile = clerkProfile(clerkUser);
+  const identityPatch = {
+    clerkId: profile.clerkId,
+    email: profile.email,
+  };
   const user = await getDb().transaction(async (tx) => {
     const existing = await tx.query.users.findFirst({
       where: eq(users.clerkId, clerkUser.clerkId),
@@ -147,7 +156,7 @@ export async function attachAnonymousCustodialAccountToClerk({
     if (existing) {
       const [updated] = await tx
         .update(users)
-        .set(profile)
+        .set(identityPatch)
         .where(eq(users.id, existing.id))
         .returning();
       await tx.insert(userBalances).values({ userId: updated.id }).onConflictDoNothing();
@@ -247,7 +256,7 @@ export async function getPostRegionsWithUnlocks(postId: string, fanId?: string) 
   if (regions.length === 0) return [];
 
   const unlockedIds = new Set<string>();
-  if (fanId && !shouldResetDevUnveilFixture(postId)) {
+  if (persistUnlockOwnership() && fanId && !shouldResetDevUnveilFixture(postId)) {
     const rows = await db.query.regionUnlocks.findMany({
       where: and(
         eq(regionUnlocks.fanId, fanId),
@@ -294,6 +303,7 @@ export async function getUserByWallet(walletAddress: string) {
 }
 
 export async function hasUnlocked(fanId: string, postId: string) {
+  if (!persistUnlockOwnership()) return false;
   const db = getDb();
   const row = await db.query.unlocks.findFirst({
     where: and(eq(unlocks.fanId, fanId), eq(unlocks.postId, postId)),
@@ -305,6 +315,8 @@ export async function getFullPostUnlockOwnership(
   fanId: string,
   postIds: string[],
 ) {
+  if (!persistUnlockOwnership()) return [];
+
   const ids = Array.from(new Set(postIds.filter(Boolean)));
   if (ids.length === 0) return [];
 
@@ -333,6 +345,12 @@ export async function recordUnlock(
   loyaltyAmount: string,
 ) {
   return getDb().transaction(async (tx) => {
+    if (!persistUnlockOwnership()) {
+      await tx
+        .delete(unlocks)
+        .where(and(eq(unlocks.fanId, fanId), eq(unlocks.postId, postId)));
+    }
+
     const [unlock] = await tx
       .insert(unlocks)
       .values({ fanId, postId, paymentTxHash, amountPaid, settlementMs })
@@ -421,6 +439,8 @@ export async function updateUserProfileById(
  * is the reward for having paid.
  */
 export async function getUnlockedPosts(fanId: string, limit = 24) {
+  if (!persistUnlockOwnership()) return [];
+
   const db = getDb();
   return db
     .select({

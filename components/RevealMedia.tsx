@@ -19,6 +19,7 @@ export function RevealMedia({
   overlay,
   priority = false,
   animateReveal = true,
+  clientBlurPreview = true,
 }: {
   previewUrl: string;
   revealedUrl: string | null;
@@ -27,6 +28,7 @@ export function RevealMedia({
   overlay?: ReactNode;
   priority?: boolean;
   animateReveal?: boolean;
+  clientBlurPreview?: boolean;
 }) {
   return (
     <div
@@ -43,7 +45,7 @@ export function RevealMedia({
         sizes="(max-width: 768px) 100vw, 412px"
         quality={50}
         className="object-cover"
-        style={{ filter: "blur(15px)", transform: "scale(1.1)" }}
+        style={clientBlurPreview ? { filter: "blur(15px)", transform: "scale(1.1)" } : undefined}
         preload={priority}
       />
       {/* Soft top gloss. */}

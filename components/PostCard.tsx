@@ -16,6 +16,7 @@ import {
 import { Avatar } from "./ui/Avatar";
 import { UnlockButton } from "./UnlockButton";
 import { RevealMedia } from "./RevealMedia";
+import { PartialImageStage } from "./PartialImageStage";
 import { VideoStage } from "./VideoStage";
 import { PartialVideoStage, type PartialRegion } from "./PartialVideoStage";
 import { useAppAuth } from "./useAppAuth";
@@ -44,6 +45,8 @@ export type FeedPost = {
   unlocked?: boolean;
   revealedUrl?: string | null;
   poster?: string | null;
+  clientBlurPreview?: boolean;
+  gateAfterSeconds?: number | null;
   regions?: PartialRegion[];
   createdAt?: string;
   social?: PostSocialState;
@@ -296,6 +299,16 @@ export function PostCard({
               />
             );
           }
+          if (post.mediaType === "image" && post.accessMode === "partial") {
+            return (
+              <PartialImageStage
+                postId={post.id}
+                previewUrl={post.blurredPreviewUrl}
+                price={post.unlockPrice}
+                regions={post.regions ?? []}
+              />
+            );
+          }
 
           const overlay = !free && (
             <div
@@ -325,6 +338,8 @@ export function PostCard({
               revealed={revealed}
               overlay={overlay}
               animateReveal={!initiallyRevealedRef.current}
+              clientBlurPreview={post.clientBlurPreview}
+              gateAfterSeconds={post.gateAfterSeconds ?? undefined}
             />
           ) : (
             <RevealMedia
@@ -335,6 +350,7 @@ export function PostCard({
               priority={priority}
               overlay={overlay}
               animateReveal={!initiallyRevealedRef.current}
+              clientBlurPreview={post.clientBlurPreview ?? !free}
             />
           );
         })()}

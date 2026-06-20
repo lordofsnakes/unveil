@@ -1,6 +1,7 @@
-import { eq, and, or, ne, desc, isNull, inArray, count } from "drizzle-orm";
+import { eq, and, or, ne, desc, isNull, inArray, count, sql } from "drizzle-orm";
 import { getDb } from "./index";
 import { threads, messages, users, posts, unlocks } from "./schema";
+import { persistUnlockOwnership } from "../unlock-ownership";
 
 /** Columns we expose for a conversation participant. */
 const participantCols = {
@@ -122,6 +123,7 @@ export async function listThreads(userId: string) {
  */
 export async function getMessages(threadId: string, viewerId: string) {
   const db = getDb();
+  const persistOwnership = persistUnlockOwnership();
   return db
     .select({
       id: messages.id,
@@ -136,7 +138,7 @@ export async function getMessages(threadId: string, viewerId: string) {
       unlockPrice: posts.unlockPrice,
       mediaType: posts.mediaType,
       // non-null when THIS viewer has unlocked the referenced post
-      viewerUnlockId: unlocks.id,
+      viewerUnlockId: persistOwnership ? unlocks.id : sql<string | null>`null`,
     })
     .from(messages)
     .leftJoin(posts, eq(messages.postId, posts.id))

@@ -18,6 +18,8 @@ export function VideoStage({
   poster,
   overlay,
   animateReveal = true,
+  clientBlurPreview = true,
+  gateAfterSeconds = 0,
 }: {
   previewUrl: string;
   revealedUrl: string | null;
@@ -25,11 +27,14 @@ export function VideoStage({
   poster?: string;
   overlay?: ReactNode;
   animateReveal?: boolean;
+  clientBlurPreview?: boolean;
+  gateAfterSeconds?: number;
 }) {
   const baseRef = useRef<HTMLVideoElement>(null);
   const cleanRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [teaserGateOpen, setTeaserGateOpen] = useState(gateAfterSeconds <= 0);
 
   const showClean = revealed && revealedUrl;
   const shouldAnimateReveal = animateReveal;
@@ -71,6 +76,16 @@ export function VideoStage({
     else clean.addEventListener("loadedmetadata", sync, { once: true });
   }, [showClean]);
 
+  useEffect(() => {
+    setTeaserGateOpen(gateAfterSeconds <= 0);
+  }, [gateAfterSeconds, previewUrl]);
+
+  const updateTeaserGate = () => {
+    if (gateAfterSeconds <= 0) return;
+    const currentTime = baseRef.current?.currentTime ?? 0;
+    setTeaserGateOpen((open) => open || currentTime >= gateAfterSeconds);
+  };
+
   const togglePlay = () => {
     const el = showClean ? cleanRef.current : baseRef.current;
     if (!el) return;
@@ -97,8 +112,14 @@ export function VideoStage({
         loop
         playsInline
         preload="metadata"
+        onTimeUpdate={updateTeaserGate}
+        onSeeked={updateTeaserGate}
         className="absolute inset-0 h-full w-full object-cover"
-        style={{ filter: "blur(15px)", transform: "scale(1.1)" }}
+        style={
+          clientBlurPreview
+            ? { filter: "blur(15px)", transform: "scale(1.1)" }
+            : undefined
+        }
       />
       {/* Soft top gloss. */}
       <div
@@ -175,7 +196,7 @@ export function VideoStage({
       )}
 
       {/* Lock / unlock overlay (only while gated). */}
-      {!revealed && overlay}
+      {!revealed && teaserGateOpen && overlay}
     </div>
   );
 }

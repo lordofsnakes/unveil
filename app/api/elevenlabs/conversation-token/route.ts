@@ -172,11 +172,23 @@ export async function GET(req: NextRequest) {
     url.searchParams.set("environment", process.env.ELEVENLABS_ENVIRONMENT);
   }
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { "xi-api-key": apiKey },
-    cache: "no-store",
-  });
+  const signedUrl = new URL(
+    "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url",
+  );
+  signedUrl.searchParams.set("agent_id", agentId);
+
+  const [response, signedResponse] = await Promise.all([
+    fetch(url, {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+      cache: "no-store",
+    }),
+    fetch(signedUrl, {
+      method: "GET",
+      headers: { "xi-api-key": apiKey },
+      cache: "no-store",
+    }),
+  ]);
 
   if (!response.ok) {
     return noStoreJson(
@@ -192,6 +204,10 @@ export async function GET(req: NextRequest) {
   const payload = (await response.json().catch(() => ({}))) as {
     token?: string;
   };
+  const signedPayload = (await signedResponse.json().catch(() => ({}))) as {
+    signed_url?: string;
+    signedUrl?: string;
+  };
   if (!payload.token) {
     return noStoreJson(
       { error: "ElevenLabs did not return a conversation token" },
@@ -203,6 +219,7 @@ export async function GET(req: NextRequest) {
   return noStoreJson(
     {
       token: payload.token,
+      signedUrl: signedPayload.signed_url ?? signedPayload.signedUrl ?? null,
       call: {
         callId: activeCall?.id ?? callId ?? null,
         threadId: thread.id,

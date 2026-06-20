@@ -21,6 +21,7 @@ import {
   mppCallReserveReferenceLike,
   mppCallSettleReference,
 } from "./custodial/mpp-call-references";
+import { persistUnlockOwnership } from "./unlock-ownership";
 export { normalizeMoney } from "./custodial/money";
 
 export const CUSTODIAL_ACCOUNT_COOKIE = "veil_account";
@@ -753,14 +754,20 @@ export async function unlockWithCustodialBalance({
   settlementMs: number;
 }): Promise<CustodialUnlockResult> {
   return getDb().transaction(async (tx) => {
-    const existing = await tx.query.unlocks.findFirst({
-      where: and(eq(unlocks.fanId, userId), eq(unlocks.postId, postId)),
-    });
-    if (existing) {
-      return {
-        status: "already_unlocked",
-        txHash: existing.paymentTxHash,
-      };
+    if (persistUnlockOwnership()) {
+      const existing = await tx.query.unlocks.findFirst({
+        where: and(eq(unlocks.fanId, userId), eq(unlocks.postId, postId)),
+      });
+      if (existing) {
+        return {
+          status: "already_unlocked",
+          txHash: existing.paymentTxHash,
+        };
+      }
+    } else {
+      await tx
+        .delete(unlocks)
+        .where(and(eq(unlocks.fanId, userId), eq(unlocks.postId, postId)));
     }
 
     await tx.insert(userBalances).values({ userId }).onConflictDoNothing();
@@ -897,6 +904,19 @@ export async function finalizeCustodialUnlockPaymentHash({
       .returning();
 
     if (!unlock) return;
+
+    await tx
+      .update(userBalances)
+      .set({
+        escrowedBalance: sql`${userBalances.escrowedBalance} - ${unlock.amountPaid}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userBalances.userId, userId),
+          sql`${userBalances.escrowedBalance} >= ${unlock.amountPaid}`,
+        ),
+      );
 
     await tx
       .update(loyaltyLedger)
@@ -1390,14 +1410,25 @@ export async function unlockRegionWithCustodialBalance({
   settlementMs: number;
 }): Promise<CustodialRegionUnlockResult> {
   return getDb().transaction(async (tx) => {
-    const existing = await tx.query.regionUnlocks.findFirst({
-      where: and(
-        eq(regionUnlocks.fanId, userId),
-        eq(regionUnlocks.postRegionId, postRegionId),
-      ),
-    });
-    if (existing) {
-      return { status: "already_unlocked", txHash: existing.paymentTxHash };
+    if (persistUnlockOwnership()) {
+      const existing = await tx.query.regionUnlocks.findFirst({
+        where: and(
+          eq(regionUnlocks.fanId, userId),
+          eq(regionUnlocks.postRegionId, postRegionId),
+        ),
+      });
+      if (existing) {
+        return { status: "already_unlocked", txHash: existing.paymentTxHash };
+      }
+    } else {
+      await tx
+        .delete(regionUnlocks)
+        .where(
+          and(
+            eq(regionUnlocks.fanId, userId),
+            eq(regionUnlocks.postRegionId, postRegionId),
+          ),
+        );
     }
 
     await tx.insert(userBalances).values({ userId }).onConflictDoNothing();
@@ -1526,6 +1557,19 @@ export async function finalizeCustodialRegionUnlockPaymentHash({
       .returning();
 
     if (!unlock) return;
+
+    await tx
+      .update(userBalances)
+      .set({
+        escrowedBalance: sql`${userBalances.escrowedBalance} - ${unlock.amountPaid}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userBalances.userId, userId),
+          sql`${userBalances.escrowedBalance} >= ${unlock.amountPaid}`,
+        ),
+      );
 
     await tx
       .update(loyaltyLedger)

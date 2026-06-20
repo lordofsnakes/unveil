@@ -275,7 +275,7 @@ export function Conversation({
 
 function TypingBubble() {
   return (
-    <div className="flex justify-start" aria-live="polite" aria-label="Vixen is typing">
+    <div className="flex justify-start" aria-live="polite" aria-label="Creator is typing">
       <div className="typing-bubble">
         <span />
         <span />
@@ -402,6 +402,8 @@ type ConversationTokenResponse = {
   token?: string;
   conversationToken?: string;
   conversation_token?: string;
+  signedUrl?: string | null;
+  signed_url?: string | null;
   serverLocation?: string;
   environment?: string;
 };
@@ -807,6 +809,12 @@ function CallSheetSession({
       if (!token) throw new Error("Voice session token was missing.");
       return {
         token,
+        signedUrl:
+          typeof body.signedUrl === "string"
+            ? body.signedUrl
+            : typeof body.signed_url === "string"
+              ? body.signed_url
+              : null,
         serverLocation: body.serverLocation,
         environment: body.environment,
       };
@@ -937,11 +945,20 @@ function CallSheetSession({
       }
 
       setCallPhase("connecting");
+      const sessionConfig = token.signedUrl
+        ? {
+            signedUrl: token.signedUrl,
+            connectionType: "websocket" as const,
+            environment: token.environment,
+          }
+        : {
+            conversationToken: token.token,
+            connectionType: "webrtc" as const,
+            serverLocation: token.serverLocation,
+            environment: token.environment,
+          };
       startSession({
-        conversationToken: token.token,
-        connectionType: "webrtc",
-        serverLocation: token.serverLocation,
-        environment: token.environment,
+        ...sessionConfig,
         onConnect: ({ conversationId }) => {
           markConnected({
             callId,

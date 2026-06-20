@@ -17,6 +17,42 @@ import { settleUnlockWithCustodialWallet } from "@/lib/custodial-wallets";
 // Postgres + Supabase Storage signing need the Node.js runtime.
 export const runtime = "nodejs";
 
+async function settleCustodialRegionUnlockInBackground({
+  userId,
+  postRegionId,
+  amount,
+  txHash,
+}: {
+  userId: string;
+  postRegionId: string;
+  amount: string;
+  txHash: string;
+}) {
+  const settlement = await settleUnlockWithCustodialWallet({
+    userId,
+    amountUsd: amount,
+    reference: txHash,
+  });
+
+  if (!settlement.ok) {
+    await rollbackCustodialRegionUnlock({
+      userId,
+      postRegionId,
+      amount,
+      txHash,
+    });
+    console.error("[region-unlock] async settlement failed:", settlement.reason);
+    return;
+  }
+
+  await finalizeCustodialRegionUnlockPaymentHash({
+    userId,
+    postRegionId,
+    internalTxHash: txHash,
+    paymentTxHash: settlement.txHash,
+  });
+}
+
 function jsonWithAccountCookie(
   body: Record<string, unknown>,
   userId: string,
@@ -81,31 +117,24 @@ export async function POST(req: NextRequest) {
 
   const isPaidUnlock = Number(price) > 0;
   if (unlock.status === "unlocked" && isPaidUnlock) {
-    const settlement = await settleUnlockWithCustodialWallet({
-      userId: appUser.id,
-      amountUsd: price,
-      reference: unlock.txHash,
-    });
-    if (!settlement.ok) {
-      await rollbackCustodialRegionUnlock({
-        userId: appUser.id,
-        postRegionId: regionId,
-        amount: price,
-        txHash: unlock.txHash,
-      });
-      return jsonWithAccountCookie(
-        { error: "Settlement failed", settlementError: settlement.reason },
-        appUser.id,
-        { status: 402 },
-      );
-    }
-    await finalizeCustodialRegionUnlockPaymentHash({
+    void settleCustodialRegionUnlockInBackground({
       userId: appUser.id,
       postRegionId: regionId,
-      internalTxHash: unlock.txHash,
-      paymentTxHash: settlement.txHash,
+      amount: price,
+      txHash: unlock.txHash,
+    }).catch(async (err) => {
+      console.error("[region-unlock] async settlement crashed:", err);
+      try {
+        await rollbackCustodialRegionUnlock({
+          userId: appUser.id,
+          postRegionId: regionId,
+          amount: price,
+          txHash: unlock.txHash,
+        });
+      } catch (rollbackErr) {
+        console.error("[region-unlock] async rollback failed:", rollbackErr);
+      }
     });
-    unlock.txHash = settlement.txHash;
   }
 
   // Short-lived signed URL for this region's clean crop.
@@ -115,6 +144,8 @@ export async function POST(req: NextRequest) {
     {
       signedUrl,
       settlementMs,
+      settlementStatus:
+        unlock.status === "unlocked" && isPaidUnlock ? "pending" : "complete",
       alreadyUnlocked: unlock.status === "already_unlocked",
       balance: unlock.status === "unlocked" ? unlock.balance : undefined,
       paymentTxHash: unlock.txHash,

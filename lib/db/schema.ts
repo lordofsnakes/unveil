@@ -123,6 +123,7 @@ export const posts = pgTable(
     // Blurred poster frame for video (private pathname; presigned for the feed).
     posterKey: text("poster_key"),
     durationMs: integer("duration_ms"), // video only — for the scrubber / preloading
+    teaserFreeMs: integer("teaser_free_ms"), // video only — delay full-post gate overlay
     isPublished: boolean("is_published").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
